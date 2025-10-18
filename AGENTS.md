@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidelines for the coding agent (and human reviewer) building **Morning Momentum** in **small, testable iterations**.
+Guidelines for the coding agent (and human reviewer) building **Klar Parat** in **small, testable iterations**.
 This file is the rulebook for *how* to build; it must evolve as the code evolves—**update it immediately when process, contracts, or conventions change.**
 
 It works with two sibling docs:
