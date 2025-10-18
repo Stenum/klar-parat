@@ -1,300 +1,273 @@
 # AGENTS.md
 
-Guidelines for the coding agent (and human reviewer) building **Morning Momentum** in **small, testable iterations**.
-This document evolves with the project—**prefer adding sections over hardcoding assumptions.**
+Guidelines for the coding agent (and human reviewer) building **Klar Parat** in **small, testable iterations**.
+This document evolves with the project — **update it as new iterations, conventions, or insights emerge**.
+
+It references two other key documents that define scope and sequencing:
+
+* **[`PRD.md`](./PRD.md)** — the **Product Requirements Document**, defining what the system must do and why.
+* **[`PLAN.md`](./PLAN.md)** — the **Implementation Plan**, defining how and in what order each iteration is built and tested.
+
+These three documents together form the **project’s governing trio**:
+**PRD = What**, **PLAN = When/How**, **AGENTS = How to Build Correctly**.
 
 ---
 
 ## 0) Principles
 
-* **Vertical slices first.** Each iteration must be user-demoable on tablet (Kid Mode loop where possible).
-* **Safety by contracts.** Share types and schemas across web/API; validate all inputs & outputs.
-* **Keep it reversible.** Small PRs, minimal blast radius, clear rollback plan.
-* **Determinism over cleverness.** Timing, medals, and urgency computations must be reproducible in unit tests.
-* **Online-only.** Assume connectivity for LLM/TTS; no offline caches or text fallbacks.
-* **No auth.** No accounts/logins for MVP. Local distribution.
-* **Multi-child is core.** Design data & routes to isolate state per child.
-* **Kid-first UX.** Big targets, minimal text, fast feedback, age-appropriate.
+* **Vertical slices first.** Each iteration should deliver a testable feature from database to UI.
+* **Stay faithful to the PRD.** If implementation diverges, update `PRD.md` (not just code).
+* **Stay aligned with PLAN.** Build only the iteration currently active in `PLAN.md`.
+* **Safety by contracts.** Shared types and schemas must be validated at all boundaries.
+* **Determinism > cleverness.** Urgency, timing, and medals must be reproducible and unit tested.
+* **Online-only.** Assume connectivity for LLM/TTS; no offline mode or text fallback.
+* **Multi-child by design.** Always isolate per-child data and session state.
+* **Kid-first UX.** Large targets, minimal text, immediate feedback.
 
 ---
 
 ## 1) Working Agreement
 
-* **Branching:** `main` (protected), feature branches `feat/<iteration>-<slug>`, fixes `fix/<slug>`.
-* **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`). One logical change per commit.
-* **PRs:** ≤ 400 LOC diff when feasible. Include:
+* **Branching:** `main` (protected); feature branches `feat/<iteration>-<slug>`.
+* **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `refactor:`).
+* **PRs:** ≤ 400 LOC when possible; reference the relevant iteration in `PLAN.md`.
+* **PR template must include:**
 
-  * Purpose and iteration linkage
-  * Screenshots/GIF (web) or cURL (API)
-  * Test plan & results
-  * Rollback strategy
-* **Definition of Done (per iteration slice):**
+  * Purpose (iteration number and brief)
+  * Acceptance criteria from `PLAN.md`
+  * Manual validation steps
+  * Screenshots (UI) or sample requests/responses (API)
+  * Links to updated docs (`PRD.md`, `PLAN.md`, `AGENTS.md` if modified)
+* **Definition of Done:**
 
-  * Code + tests pass locally and CI
-  * Acceptance criteria met (see iteration plan)
-  * UX verified on iPad/Safari (or iOS simulator)
-  * Docs updated (README sections and this file if relevant)
-* **Feature flags:** Prefer env/JSON toggles. Examples:
-
-  * `USE_FAKE_LLM`, `USE_FAKE_TTS`, `ENABLE_URGENCY`, `ENABLE_MEDALS`, `DEBUG_UI`
+  * CI passes (lint, typecheck, tests)
+  * Acceptance criteria met
+  * Manual validation on tablet (Safari/iOS)
+  * Docs updated if scope or sequence changed
 
 ---
 
-## 2) Repository (expected baseline; refine as we go)
+## 2) Repository Layout
 
 ```
 /apps
   /web       # React + Vite + Tailwind
   /api       # Express + Prisma (SQLite)
 /packages
-  /shared    # Types, zod schemas, constants (urgency thresholds)
-/tests
-  /api       # Integration tests (supertest)
-/.github
-  /workflows # CI: lint, typecheck, test
+  /shared    # Types, Zod schemas, constants
+/docs
+  PRD.md     # Product Requirements
+  PLAN.md    # Implementation Plan
+  AGENTS.md  # (this file)
 ```
 
-> If layout diverges, update this doc and the project README in the same PR.
+> Keep `/docs` as the single source of truth for requirements, planning, and process.
 
 ---
 
 ## 3) Coding Standards
 
-### 3.1 Language & Tooling
+### Language & Tooling
 
-* **TypeScript everywhere.** `strict: true`.
-* **ESLint + Prettier.** No disabling rules without justification.
-* **Paths & imports:** Prefer absolute import aliases (`@shared/*`) via TS path mapping.
+* **TypeScript everywhere** with `strict: true`.
+* **ESLint + Prettier** enforced; no inline disable unless justified.
+* Use **absolute imports** (`@shared/*`) via TS paths.
 
-### 3.2 API
+### API
 
-* **REST, JSON only.**
-* **Validation:** All request bodies & query params validated with **zod** in the API.
-* **Responses:** Typed DTOs shared via `/packages/shared`.
-* **Errors:** Consistent shape:
+* REST, JSON only.
+* All inputs validated with **Zod**.
+* Standard error shape:
 
   ```json
   { "error": { "code": "BAD_REQUEST", "message": "..." } }
   ```
-* **Idempotency:** Task completion endpoints must be idempotent.
+* Idempotent endpoints for task completion and session finalization.
 
-### 3.3 Web (React)
+### Web
 
-* **State:** Local component state for UI; global app state via Zustand or Redux Toolkit (keep slices small).
-* **Side effects:** Use React Query (or RTK Query) for API calls; retries with backoff where appropriate.
-* **Accessibility:** Tap targets ≥ 44px, focus outlines, ARIA labels for key buttons.
-* **Performance:** Avoid heavy renders; memoize lists; no needless reflows.
+* State: Local for UI, global via Zustand or RTK Query.
+* Effects: React Query (preferred).
+* Accessibility: ≥44px tap targets, ARIA labels, keyboard navigation.
+* No magic animations; keep transitions subtle.
 
-### 3.4 Styling
+### Time & Logic
 
-* **TailwindCSS.** Semantic utility groupings; avoid long class chains—extract components.
-* **Design tokens:** Keep spacing/size constants where reused (e.g., `BTN_LG`).
-
-### 3.5 Time & Math
-
-* Use a single library (`dayjs` or `luxon`) for time math.
-* All **urgency** and **medal** computations are **pure functions** with unit tests (no Date.now inside—inject `now`).
+* Use `dayjs` or `luxon` consistently.
+* Time/urgency/medal functions must be **pure** and **unit-tested** (no direct `Date.now()`).
 
 ---
 
 ## 4) Testing Conventions
 
-### 4.1 Pyramid
+### Pyramid
 
-* **Unit tests** (fast, many): pure utils (urgency, medals, validators).
-* **API integration tests** (supertest): CRUD flows, session lifecycle, idempotency.
-* **Web tests** (Vitest + React Testing Library): critical flows (start session → complete tasks → medal).
-* **Manual scripts** for iPad validation (documented per iteration).
+* **Unit tests:** shared logic and validators.
+* **Integration tests:** API (supertest).
+* **Component tests:** key UI flows with React Testing Library.
+* **Manual validation:** follow checklists in `PLAN.md`.
 
-### 4.2 Naming & Structure
+### Structure
 
-* Mirror source structure; `*.spec.ts`.
-* Deterministic seeds for DB tests; reset DB per suite.
+* Tests mirror source folder structure.
+* One test file per pure module.
+* Deterministic seeds for DB; reset per suite.
 
-### 4.3 External Services
+### External Services
 
-* **LLM/TTS are mocked** by default in tests. Real integrations covered by isolated “can-run-locally” suites behind env flags.
-* Never make network calls in unit tests.
-
----
-
-## 5) Data & Contracts (minimal; expand iteratively)
-
-* **Children**
-
-  * `first_name: string (1..40)`, `birthdate: ISO date`, `active: boolean`
-* **Templates**
-
-  * `id: uuid`, `name: string (1..60)`, `default_start_time: "HH:MM"`, `default_end_time: "HH:MM"`
-* **Template Tasks**
-
-  * `title: string (1..60)`, `emoji?: string`, `hint?: string`, `expected_minutes: number >= 0 (default from settings, e.g., 1.0)`
-* **Sessions**
-
-  * Snapshot of template + tasks; `planned_start_at`, `planned_end_at`, `actual_*`, `medal`
-* **Session Tasks**
-
-  * `completed_at: timestamp|null`, `skipped: boolean`
-
-> Keep snapshots immutable; changes to templates/settings affect **future** sessions only.
+* Mock LLM/TTS by default; real tests behind env flags.
+* No live network calls in unit tests.
 
 ---
 
-## 6) Urgency & Medals (keep pure & testable)
+## 5) Data & Contracts
 
-* **Expected Total:** `sum(expected_minutes of required tasks)`
-* **Medals (defaults, configurable for future):**
+Follow schemas as defined in **`PRD.md`**, section *System Design > Data Model*.
+If schema changes, **update both the code and PRD.md simultaneously**.
 
-  * Gold `actual_total ≤ 1.0 × expected_total`
-  * Silver `≤ 1.3 × expected_total`
-  * Bronze otherwise
-* **Urgency inputs:**
-
-  * `planned_start_at`, `planned_end_at`, `now`
-  * `completed_expected / expected_total` → `progress_ratio`
-  * `pace_delta = elapsed/total_window - progress_ratio`
-* **Levels (initial heuristic; adjustable):**
-
-  * L0: early; L1: normal; L2: late; L3: critical.
-* **Mid-task nudge:** Trigger once if a task exceeds `1.5 × expected`.
-
-> Implement as `computeMedal()` and `computeUrgency()` in `/packages/shared/logic/*` with exhaustive tests.
+* Snapshots are immutable (template changes do not affect past sessions).
+* `expected_minutes` defaults come from global settings.
+* All times are 24h `"HH:MM"` strings; store UTC internally.
 
 ---
 
-## 7) LLM & TTS Integration (phased)
+## 6) Urgency & Medal Logic
 
-* **Phase A (fake):** `/api/dev/fake-llm` and `/api/dev/fake-tts` for deterministic E2E.
-* **Phase B (real LLM):** Server-only call to OpenAI. **Contract**: must return `{ text: string }` ≤ 120 chars. Validate & truncate server-side.
-* **Phase C (real TTS):** Abstraction `synthesize(text, language, voice)`; provider strategy: Fake | WebSpeech | Cloud.
-* **Autoplay:** Require a one-time “Enable Voice” gesture at session start.
+Defined precisely in **`PRD.md` → Timing, Medals & Urgency**.
 
-> No on-screen text fallback; if calls fail, retry (limited) and continue silently to next event.
-
----
-
-## 8) Observability & Errors
-
-* **Structured logs** (API): request id, route, duration, result, error code.
-* **Client event log** (debug build): last N speech events with timing.
-* **Never crash on speech/LLM failures.** Log and continue.
+* Implement functions `computeMedal()` and `computeUrgency()` in `/packages/shared/logic/`.
+* Cover boundary tests (≤, ≥) and rounding errors.
+* Never rely on client-side clocks for final medal computation.
 
 ---
 
-## 9) Security & Privacy (basic for personal project)
+## 7) LLM & TTS Integration
 
-* HTTPS if exposed beyond LAN.
-* API keys only on server via env vars.
-* Birthdates stored locally; no third-party analytics by default.
-* CORS restricted to the web app origin (configurable).
+Phased implementation per **`PLAN.md` Iterations 5–6**.
+
+* LLM: Server-only call to OpenAI, strict JSON schema `{ text }`.
+* TTS: Use a provider abstraction with fake, WebSpeech, and cloud variants.
+* No on-screen text fallback; retries and continue silently if failure persists.
+* Respect the “Enable Voice” gesture to comply with autoplay restrictions.
 
 ---
 
-## 10) Iteration Checklists (template)
+## 8) Observability & Error Handling
 
-> Copy this checklist into each iteration PR and fill it.
+* Log structured entries: `request_id`, `route`, `duration`, `result`, `error`.
+* Never crash on network/TTS/LLM issues; log and continue.
+* Add debug panel (dev only) showing recent voice events.
 
-**Goal:**
-**Scope:** (routes, data, UI)
+---
+
+## 9) Privacy & Security
+
+* HTTPS for any non-local deployment.
+* API keys only on the server (via `.env`).
+* PII limited to `first_name` and `birthdate`.
+* No analytics or third-party trackers in MVP.
+
+---
+
+## 10) Documentation Rules
+
+* **`PRD.md`** defines **scope and behavior** — update if logic or data model changes.
+* **`PLAN.md`** defines **order and milestones** — update when iterations change or merge.
+* **`AGENTS.md`** defines **how to build safely** — update when new tools, coding rules, or testing practices emerge.
+
+Every PR that alters any of these dimensions must include the relevant doc edits.
+
+---
+
+## 11) Iteration Checklists (Template)
+
+> Paste into each PR description when implementing an iteration from `PLAN.md`.
+
+**Iteration:** (e.g., I3 — Timing & Medal Engine)
+**Linked Docs:** `PLAN.md#iteration-3`, `PRD.md#timing-medals-urgency`
 
 **Acceptance Criteria:**
 
-* [ ] Criteria 1
-* [ ] Criteria 2
+* [ ] Matches behavior in PRD
+* [ ] Meets iteration objectives in PLAN
+* [ ] Passes tests and manual validation
 
-**Developer Tasks:**
+**Tasks:**
 
-* [ ] Schema/migration
-* [ ] DTOs & zod validators
-* [ ] API handlers + tests
-* [ ] UI components + tests
-* [ ] Manual iPad check
-
-**Test Plan:**
-
-* [ ] Unit (logic)
-* [ ] API integration (supertest)
-* [ ] Web (RTL)
-* [ ] Manual script steps
-
-**Risks & Mitigations:**
-
-* [ ] …
-* [ ] …
-
-**Docs Updated:**
-
-* [ ] README
-* [ ] AGENTS.md (this file)
+* [ ] Schema updates (if needed)
+* [ ] API routes & Zod validators
+* [ ] Web components & hooks
+* [ ] Unit + Integration tests
+* [ ] Docs updated (PRD/PLAN/AGENTS)
 
 ---
 
-## 11) PR Quality Bar (reject if missing)
+## 12) PR Quality Gate
 
-* ❌ No tests → reject.
-* ❌ Failing CI → reject.
-* ❌ Untyped or `any` without comment → reject.
-* ❌ Silent API changes (no schema update) → reject.
-* ❌ Feature flag missing for risky toggles → reject.
+Reject any PR that:
 
----
-
-## 12) UI Guidelines (Kid Mode)
-
-* Minimal on-screen text; one primary action per task.
-* Progress bar and clear “Next up” hint.
-* Motion subtle; no flashing.
-* Buttons: large, high contrast; labels are action-first (“Mark Done”).
+* ❌ Lacks references to PRD/PLAN iterations
+* ❌ Introduces untyped or `any` code
+* ❌ Breaks test or lint pipelines
+* ❌ Adds untracked dependencies
+* ❌ Changes logic without doc update
 
 ---
 
-## 13) Manual Validation Scripts (living section)
+## 13) UI Rules (Kid Mode)
 
-Maintain quick scripts per iteration (copy into PR):
-
-* **I2:** Start session, reload, task order persists.
-* **I3:** Complete fast → Gold; slow → Silver/Bronze; boundary verified.
-* **I4:** Shorten window, wait to cross 50/25/10%; dev banner shows L1/L2/L3.
-* **I5:** Tap “Enable Voice”, complete task → audio within ~1s.
-* **I6:** Switch language (EN/DA); messages swap; L3 phrasing is concise.
-* **I7:** Two children running; independent timing/voice.
-* **I8:** History shows last sessions; detail shows longest task.
-
-> Update as new iterations are added.
+* Only one primary action visible per screen.
+* Progress and next task always visible.
+* Voice feedback is authoritative; UI complements it.
+* Never introduce text-based fallback dialogues.
+* Avoid stress-inducing colors (no red countdowns).
 
 ---
 
-## 14) When Adding New Capabilities
+## 14) Manual Validation Scripts
 
-* Extend **shared types & zod** first → API → UI.
-* Add **pure functions + unit tests** for any new calculation.
-* Add **feature flag** if behavior changes are risky.
-* Update **manual validation scripts** and this document.
+Keep updated per iteration; see `PLAN.md` for current list.
+Each iteration PR should note which script(s) were used.
 
 ---
 
-## 15) Known Non-Goals (MVP)
+## 15) Adding New Capabilities
 
-* No offline mode.
-* No email/password accounts.
-* No text-on-screen fallback for voice messages.
-* No external reward stores or sticker economies (yet).
+When extending beyond MVP:
+
+1. Propose change in `PRD.md`.
+2. Add or adjust iteration in `PLAN.md`.
+3. Reflect process/tooling changes here in `AGENTS.md`.
+4. Implement feature only after documentation alignment.
 
 ---
 
-## 16) Glossary
+## 16) Non-Goals (MVP)
 
-* **Today Session:** A per-child, per-day instance created from a template (immutable snapshot).
-* **Expected Minutes:** Task-specific estimate used for medals and urgency pacing.
-* **Urgency Level:** 0–3 scale that shapes nudge tone & frequency.
+* No offline support.
+* No authentication or remote accounts.
+* No text-based fallbacks for voice.
+* No gamified reward stores or stickers (future potential).
+
+---
+
+## 17) Glossary
+
+* **PRD.md:** Product Requirements Document — defines **what** and **why**.
+* **PLAN.md:** Implementation Plan — defines **when** and **how**.
+* **AGENTS.md:** Development Guidelines — defines **how to build correctly**.
+* **Iteration:** A small, testable vertical slice described in PLAN.md.
+* **Today Session:** Per-child routine instance with snapshot.
+* **Urgency Level:** 0–3 pacing indicator driving voice tone.
 
 ---
 
 ### Edit History
 
-* **v0.1** — Initial guardrails for Iterations 0–3.
-* (Append entries with summary per PR that updates this file.)
+* **v0.2** — Added cross-references to `PRD.md` and `PLAN.md`, clarified document roles, aligned iteration workflow.
+* Future updates: append new version entries with summary and date.
 
 ---
 
-**Remember:** If a decision increases implementation risk or future refactor cost, **stop and update this file + the iteration plan first.**
+> ⚙️ **Reminder:** The coding agent must never invent features or behavior outside `PRD.md`.
+> Always cross-check implementation details with `PLAN.md`, and use this `AGENTS.md` as the rulebook for code quality and testing discipline.
