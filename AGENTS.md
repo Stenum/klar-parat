@@ -115,6 +115,18 @@ In `PLAN.md`, every iteration carries a status:
 * Performance: avoid unnecessary re-renders; memoize lists.
 * iPad Safari voice policy: require one-tap **Enable Voice** at session start.
 
+### apps/web component layout & conventions
+
+* `App.tsx` is the orchestration layer only—no presentational JSX beyond shell layout. It wires navigation, shared session state, and hands props to feature components.
+* Feature components live under `apps/web/src/components/<feature>/` (e.g. `children/ChildrenManager.tsx`, `templates/TemplatesManager.tsx`, `today/TodayManager.tsx`, `kid-mode/KidMode.tsx`). Keep supporting helpers and form types colocated within the component file unless they are shared.
+* Cross-component types belong in `apps/web/src/types/` and reusable utilities in `apps/web/src/utils/`. Update or create helpers (e.g. `utils/sessionProgress.ts`) instead of duplicating derivation logic.
+* Component files should:
+  * export a single `FC` (named export) and keep hook calls at the top.
+  * wrap asynchronous handlers in `useCallback` and memoise derived data with `useMemo` to keep renders predictable.
+  * perform side effects via `useEffect` with exhaustive dependency arrays—prefer derived primitives over entire objects to avoid runaway loops.
+  * surface local validation errors through state rather than throwing.
+  * never embed unrelated components inline inside another component file; add a new file when JSX exceeds a focused responsibility.
+
 **Styling**
 
 * Tailwind; factor out repeated utility groups into components.
