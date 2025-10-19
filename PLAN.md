@@ -28,6 +28,8 @@
 
 # Iteration 1 — Data Model + Adminless Local App Shell
 
+**Status:** 🟩 Complete (AgentGPT – 2025-10-20)
+  - PR TBD — Shipped Prisma schema, CRUD APIs, and adminless web shell; verified with `npm run lint`, `npm run typecheck`, `npm run test`.
 **Goal:** Minimal DB models and a basic navigation shell—no auth, no users.
 
 **Schema**

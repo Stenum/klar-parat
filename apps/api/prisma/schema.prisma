@@ -7,4 +7,73 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Models will be added in later iterations.
+
+model Child {
+  id        String   @id @default(cuid())
+  firstName String   @map("first_name")
+  birthdate DateTime
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sessions Session[]
+
+  @@map("children")
+}
+
+model Template {
+  id               String         @id @default(cuid())
+  name             String
+  defaultStartTime String         @map("default_start_time")
+  defaultEndTime   String         @map("default_end_time")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  tasks TemplateTask[]
+
+  @@map("templates")
+}
+
+model TemplateTask {
+  id              String   @id @default(cuid())
+  templateId      String   @map("template_id")
+  orderIndex      Int      @map("order_index")
+  title           String
+  emoji           String?
+  hint            String?
+  expectedMinutes Float    @default(1.0) @map("expected_minutes")
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("template_tasks")
+}
+
+model Session {
+  id                   String        @id @default(cuid())
+  childId              String        @map("child_id")
+  templateSnapshot     String        @map("template_snapshot")
+  plannedStartAt       DateTime      @map("planned_start_at")
+  plannedEndAt         DateTime      @map("planned_end_at")
+  actualStartAt        DateTime?     @map("actual_start_at")
+  actualEndAt          DateTime?     @map("actual_end_at")
+  expectedTotalMinutes Float         @map("expected_total_minutes")
+  medal                String?
+  createdAt            DateTime      @default(now()) @map("created_at")
+
+  child  Child        @relation(fields: [childId], references: [id])
+  tasks  SessionTask[]
+
+  @@map("sessions")
+}
+
+model SessionTask {
+  id              String   @id @default(cuid())
+  sessionId       String   @map("session_id")
+  title           String
+  expectedMinutes Float    @default(1.0) @map("expected_minutes")
+  completedAt     DateTime? @map("completed_at")
+  skipped         Boolean  @default(false)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_tasks")
+}

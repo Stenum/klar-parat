@@ -7,11 +7,13 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "npm run prisma:generate --workspace=@klar-parat/api",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
+    "@eslint/js": "^9.38.0",
     "typescript": "5.5.4"
   }
 }

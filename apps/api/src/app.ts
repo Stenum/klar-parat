@@ -1,7 +1,9 @@
 import cors from 'cors';
 import express from 'express';
 
+import { registerChildrenRoutes } from './routes/children.js';
 import { registerDevRoutes } from './routes/dev.js';
+import { registerTemplateRoutes } from './routes/templates.js';
 
 export const createApp = () => {
   const app = express();
@@ -13,6 +15,8 @@ export const createApp = () => {
     res.type('text/plain').send('OK');
   });
 
+  registerChildrenRoutes(app);
+  registerTemplateRoutes(app);
   registerDevRoutes(app);
 
   return app;
