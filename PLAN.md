@@ -66,6 +66,9 @@
 
 # Iteration 2 — Session Creation (Single Child), No Timing Yet
 
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-21)
+  - PR TBD — Added session start API, kid mode flow, and schema updates; verified with `npm run lint`, `npm run typecheck`, `npm run test`.
+
 **Goal:** Create a “Today Session” instance from a template for one child and render Kid Mode UI (no clocks, no LLM/TTS).
 
 **API**

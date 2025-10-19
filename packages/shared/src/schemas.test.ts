@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   childCreateSchema,
+  sessionStartSchema,
   templateCreateSchema,
   templateUpdateSchema,
   timeStringSchema
@@ -84,6 +85,28 @@ describe('template schemas', () => {
         defaultStartTime: '07:00',
         defaultEndTime: '08:00',
         tasks: [{ title: 'Brush Teeth', expectedMinutes: -1 }]
+      })
+    ).toThrow();
+  });
+});
+
+describe('sessionStartSchema', () => {
+  it('defaults allowSkip to false and validates ordering', () => {
+    const parsed = sessionStartSchema.parse({
+      childId: 'ckchild12345678901234567890',
+      templateId: 'cktmpl12345678901234567890'
+    });
+
+    expect(parsed.allowSkip).toBe(false);
+  });
+
+  it('rejects when end is before start', () => {
+    expect(() =>
+      sessionStartSchema.parse({
+        childId: 'ckchild12345678901234567890',
+        templateId: 'cktmpl12345678901234567890',
+        plannedStartAt: '2025-01-01T09:00:00.000Z',
+        plannedEndAt: '2025-01-01T08:00:00.000Z'
       })
     ).toThrow();
   });

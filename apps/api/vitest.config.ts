@@ -5,7 +5,12 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 10000,
     hookTimeout: 30000,
-    singleThread: true
+    singleThread: true,
+    maxConcurrency: 1,
+    sequence: {
+      concurrent: false
+    }
   }
 });

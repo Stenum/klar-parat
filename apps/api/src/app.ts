@@ -3,6 +3,7 @@ import express from 'express';
 
 import { registerChildrenRoutes } from './routes/children.js';
 import { registerDevRoutes } from './routes/dev.js';
+import { registerSessionRoutes } from './routes/sessions.js';
 import { registerTemplateRoutes } from './routes/templates.js';
 
 export const createApp = () => {
@@ -17,6 +18,7 @@ export const createApp = () => {
 
   registerChildrenRoutes(app);
   registerTemplateRoutes(app);
+  registerSessionRoutes(app);
   registerDevRoutes(app);
 
   return app;

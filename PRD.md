@@ -281,6 +281,7 @@ _No auth yet; everything is stored locally for a single household._
 * `child_id (fk children)`
 * `template_snapshot` (JSON string of the template at start; stored as TEXT in SQLite for now)
 * `planned_start_at`, `planned_end_at`
+* `allow_skip` (bool, default `false`)
 * `actual_start_at`, `actual_end_at`
 * `expected_total_minutes`
 * `medal` (nullable until completion)
@@ -290,6 +291,7 @@ _No auth yet; everything is stored locally for a single household._
 
 * `id (pk, cuid)`
 * `session_id (fk sessions)`
+* `order_index` (0-based, keeps kid-mode order)
 * `title`
 * `expected_minutes`
 * `completed_at` (nullable)
@@ -317,6 +319,11 @@ s follow `{ "error": { "code", "message" } }`.
 * `DELETE /api/templates/:id` → remove template + tasks.
 * `POST /api/templates/:id/clone-to-today` → returns `{ snapshot }` with `expectedTotalMinutes` for session bootstrapping.
 
+**Sessions**
+
+* `POST /api/sessions/start { childId, templateId, plannedStartAt?, plannedEndAt?, allowSkip? }` → create snapshot + tasks.
+* `GET /api/sessions/:id` → fetch session with ordered tasks and template snapshot.
+
 Validation errors return HTTP 400, missing resources 404, and unexpected failures 500.
 
 ---
@@ -335,6 +342,7 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 
 1. Open app → “Start Today” (or auto when first task completed).
 2. Big card for current task with emoji + hint; “Mark Done” button.
+   * Optional “Skip” button shows only if the parent allowed skips when starting the session.
 3. On tap: message is generated → TTS plays → next task slides in.
 4. Final task: “You finished!” + medal animation + total time vs. expected.
 

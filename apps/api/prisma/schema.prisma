@@ -53,6 +53,7 @@ model Session {
   templateSnapshot     String        @map("template_snapshot")
   plannedStartAt       DateTime      @map("planned_start_at")
   plannedEndAt         DateTime      @map("planned_end_at")
+  allowSkip            Boolean       @default(false) @map("allow_skip")
   actualStartAt        DateTime?     @map("actual_start_at")
   actualEndAt          DateTime?     @map("actual_end_at")
   expectedTotalMinutes Float         @map("expected_total_minutes")
@@ -68,6 +69,7 @@ model Session {
 model SessionTask {
   id              String   @id @default(cuid())
   sessionId       String   @map("session_id")
+  orderIndex      Int      @map("order_index")
   title           String
   expectedMinutes Float    @default(1.0) @map("expected_minutes")
   completedAt     DateTime? @map("completed_at")
