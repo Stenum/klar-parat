@@ -47,6 +47,13 @@ Run the API (port 4000 by default):
 npm run dev --workspace @klar-parat/api
 ```
 
+The API dev server automatically applies pending Prisma migrations to the local SQLite database. If you need to apply them
+manually (for example after pulling new migrations on a running process), run:
+
+```bash
+npm run prisma:migrate:deploy --workspace @klar-parat/api
+```
+
 Run the web app (port 5173 by default):
 
 ```bash

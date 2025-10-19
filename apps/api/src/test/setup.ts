@@ -19,6 +19,11 @@ const sqliteUrl = `file:${dbFile.replace(/\\/g, '/')}`;
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? sqliteUrl;
 process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 
+execSync('npx prisma generate', {
+  cwd: apiRoot,
+  stdio: 'inherit'
+});
+
 const prismaModulePromise = import('../lib/prisma.js');
 
 beforeAll(async () => {
