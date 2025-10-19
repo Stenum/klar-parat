@@ -132,7 +132,7 @@
 
 # Iteration 4 — Urgency Model (LLM/TTS still fake)
 
-**Goal:** Compute urgency levels and nudge frequency; surface them in the UI (text labels for you to see), but still call **fake** LLM/TTS.
+**Goal:** Compute urgency levels and schedule three mid-task encouragements per task; surface them in the UI (text labels for you to see), but still call **fake** LLM/TTS.
 
 **Urgency Computation (server)**
 
@@ -144,7 +144,7 @@
   * `progress_ratio = completed_expected / expected_total`
   * `pace_delta = elapsed / total_window - progress_ratio`
 * Map to levels 0–3 per thresholds; recompute on every event.
-* Mid-task nudge if task runtime > 1.5× expected (emit one “nudge event” per offending task).
+* Mid-task nudge cadence: schedule up to three “nudge events” per task at 33%, 66%, and 100% of `expected_minutes` elapsed (no duplicates once fired), even if the task is still within expected time.
 
 **API**
 
@@ -153,11 +153,12 @@
 **Web**
 
 * Kid Mode “dev banner” showing `Urgency: L2, 9m left` for validation.
-* Trigger mid-task nudge by waiting beyond 1.5× expected.
+* Trigger mid-task nudges by letting a task run past the 33%, 66%, and 100% marks of its expected minutes (use dev controls to fast-forward if needed).
 
 **Validation**
 
 * Manually tweak `planned_end_at` to hit L2/L3; verify banner updates.
+* Let a task run long enough to trigger all three nudge events and confirm each fires exactly once.
 
 **Why now?** Prove urgency math before adding real speech—prevents prompting issues later.
 
@@ -213,30 +214,32 @@
 
 ---
 
-# Iteration 7 — Multi-Child Parallel Sessions
+# Iteration 7 — Multi-Child Same-Screen Board
 
-**Goal:** Run separate sessions for different children without interference.
+**Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent.
 
 **Web**
 
-* Today (Parent): grid of child cards with “Start”/“Resume” session.
-* Each card opens its own Kid Mode route (`/today/:childId`).
-* Visual indicators: Running, Paused, Completed.
+* Replace Kid Mode with a board layout that shows one column per active child (current task, progress bar, big Complete/Skip buttons).
+* The Today (Parent) view launches and resumes sessions into the shared board without navigation changes; allow quick focus highlighting per column.
+* Surface live medal and urgency status per child column so progress is visible at a glance.
 
 **Server**
 
-* Sessions keyed by `child_id`.
-* Enforce one active session per child.
+* Maintain independent session state keyed by `session_id` and expose `GET /api/sessions/active` to return all running sessions for the board.
+* Ensure concurrency safety when multiple columns trigger `complete` events simultaneously; queue TTS requests per session to avoid overlapping audio.
 
 **Validation**
 
-* Start two sessions with different templates/times; each plays its own TTS and computes urgency independently.
+* Start sessions for two children; confirm both columns advance correctly on the same screen and play their own TTS without crosstalk.
+* Pause one child while the other continues; urgency levels update independently.
 
 **Tests**
 
-* Concurrency: two `complete` events for different sessions processed correctly.
+* Concurrency: two `complete` events for different sessions processed simultaneously without race conditions.
+* Board layout: component tests covering focus switching and column rendering.
 
-**Why now?** You asked for multi-child as a must; we land it when the single-session loop is trustworthy.
+**Why now?** Delivers the sibling experience while the voice stack is still under control, so concurrency bugs surface before polish work.
 
 ---
 
@@ -352,7 +355,7 @@
 * **I4 (urgency math):** Set window to 20 min; wait to cross 50%, 25%, 10%; see level changes in dev banner.
 * **I5 (TTS):** Tap “Enable Voice”; complete a task; hear audio within ~1s.
 * **I6 (LLM):** Switch to Danish; complete task near end time; hear concise “hurry” phrasing.
-* **I7 (multi-child):** Start two sessions; ensure independent speech & timing.
+* **I7 (multi-child):** Start two sessions; confirm both columns advance on the same board with independent speech & timing.
 * **I8 (history):** Finish, then check recent sessions; open detail; confirm longest task.
 
 ---
