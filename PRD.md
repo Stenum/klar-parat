@@ -54,7 +54,7 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 ### In
 
 * Parent login (single household account; email + password).
-* 1 household, multiple children profiles (optional, MVP can be single child if you prefer).
+* 1 household with multiple children profiles, each able to run simultaneous sessions on the shared Kid Mode board.
 * Routine templates with tasks (title, optional emoji, optional hint).
 * Per-task **expected duration** to compute medals (not a hard countdown by default).
 * **Auto-run session timer** for the whole routine (start/stop by parent or auto-start when first task checked).
@@ -107,6 +107,7 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * As a child, I see a simple list with only one primary action per task.
 * As a child, I hear a friendly message after I finish each task.
 * As a child, I see progress and how close I am to finishing.
+* As siblings, we can each see our own task column on the same screen and tap without waiting for turns.
 
 **Functional Requirements**
 
@@ -114,6 +115,7 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * **Mark task complete**: one tap; app records completion timestamp.
 * **Skip task** (configurable per session by parent; default off).
 * **Progress UI**: completed count / total; progress bar; next task highlighted.
+* **Multi-child board**: render one column per active session with independent controls (Complete/Skip) and timers, visible concurrently.
 * **Encouragement message**: after each completion, with TTS playback.
 * **End session**: when all required tasks completed → compute medal.
 
@@ -122,10 +124,11 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * All interactive elements must be tappable with a thumb (min 44px touch target).
 * TTS plays within 500 ms of task completion (subject to device/browser).
 * If TTS fails, show on-screen message and continue.
+* When two sessions run simultaneously, both remain visible and tappable on the board with independent voice playback.
 
 ---
 
-### 4.3 Timing & Medals
+### 4.3 Timing, Urgency & Medals
 
 **User Stories**
 
@@ -143,11 +146,14 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
   * Silver ≤ **1.3 × expected total**
   * Bronze > Silver threshold
 * Optional **per-task soft timers**: if a task takes > 2× its expected minutes, show a gentle nudge message next time that task appears (learning hint).
+* **Urgency levels** (0–3) derived from pace delta inform voice tone and board status badges.
+* **Mid-task encouragement cadence**: schedule up to three nudges per task at 33%, 66%, and 100% of its expected minutes elapsed (clamped to completion) even before expected time is exceeded; mark each as fired to avoid duplicates.
 
 **Acceptance Criteria**
 
 * Medal is computed deterministically from timestamps and settings.
 * Changing global thresholds affects **future** sessions, not historical.
+* Each task can emit up to three mid-task nudges; additional runtime does not duplicate them.
 
 ---
 
@@ -343,9 +349,9 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 ### 8.2 Kid runs Today Session
 
 1. Open app → “Start Today” (or auto when first task completed).
-2. Big card for current task with emoji + hint; “Mark Done” button.
+2. Kid Mode board shows one column per active child with current task card (emoji + hint) and a big “Mark Done” button.
    * Optional “Skip” button shows only if the parent allowed skips when starting the session.
-3. On tap: message is generated → TTS plays → next task slides in.
+3. On tap: message is generated → TTS plays → that child’s column advances while others continue uninterrupted.
 4. Final task: “You finished!” + medal animation + total time vs. expected.
 
 **Edge cases:**
@@ -417,7 +423,7 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 
 * Per-task live timers (visible countdown rings).
 * Sticker/badge collection and streaks.
-* Multiple children running **simultaneous** sessions with quick swap.
+* Shared sibling mini-games triggered when multiple children finish tasks together.
 * Parent push reminders (web push).
 * Deeper insights: “Top 3 slow tasks this month.”
 * Guided breaks or breathing prompts if a task stalls.
