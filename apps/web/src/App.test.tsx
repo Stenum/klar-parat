@@ -1,5 +1,5 @@
 import type { Child, Session, Template } from '@shared/schemas';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -175,6 +175,86 @@ describe('App', () => {
         return jsonResponse({ error: { message: 'Not found' } }, 404);
       }
 
+      const completeMatch = url.match(/\/api\/sessions\/([^/]+)\/task\/(\d+)\/complete$/);
+      if (completeMatch && method === 'POST') {
+        if (!currentSession) {
+          return jsonResponse({ error: { message: 'Not found' } }, 404);
+        }
+
+        const [, sessionId, index] = completeMatch;
+        if (currentSession.id !== sessionId) {
+          return jsonResponse({ error: { message: 'Not found' } }, 404);
+        }
+
+        const { skipped = false } = init?.body ? (JSON.parse(init.body as string) as { skipped?: boolean }) : {};
+        const orderIndex = Number.parseInt(index, 10);
+        const task = currentSession.tasks.find((item) => item.orderIndex === orderIndex);
+        if (!task) {
+          return jsonResponse({ error: { message: 'Task not found' } }, 404);
+        }
+
+        const now = new Date().toISOString();
+        const updatedTasks = currentSession.tasks.map((item) => {
+          if (item.orderIndex !== orderIndex) {
+            return item;
+          }
+          return {
+            ...item,
+            skipped,
+            completedAt: skipped ? null : now
+          };
+        });
+
+        const actualStartAt = skipped
+          ? currentSession.actualStartAt
+          : currentSession.actualStartAt ?? now;
+
+        currentSession = {
+          ...currentSession,
+          actualStartAt,
+          tasks: updatedTasks
+        };
+
+        return jsonResponse({ session: currentSession });
+      }
+
+      const finishMatch = url.match(/\/api\/sessions\/([^/]+)\/finish$/);
+      if (finishMatch && method === 'POST') {
+        if (!currentSession) {
+          return jsonResponse({ error: { message: 'Not found' } }, 404);
+        }
+
+        const [, sessionId] = finishMatch;
+        if (currentSession.id !== sessionId) {
+          return jsonResponse({ error: { message: 'Not found' } }, 404);
+        }
+
+        const remaining = currentSession.tasks.some((task) => !task.completedAt && !task.skipped);
+        if (remaining) {
+          return jsonResponse(
+            { error: { message: 'All tasks must be completed or skipped before finishing' } },
+            400
+          );
+        }
+
+        const now = new Date().toISOString();
+        const completedTimes = currentSession.tasks
+          .map((task) => task.completedAt)
+          .filter((value): value is string => Boolean(value));
+        const earliest = completedTimes.length
+          ? completedTimes.reduce((earliestTime, current) => (current < earliestTime ? current : earliestTime))
+          : now;
+
+        currentSession = {
+          ...currentSession,
+          actualStartAt: currentSession.actualStartAt ?? earliest,
+          actualEndAt: now,
+          medal: 'gold'
+        };
+
+        return jsonResponse({ session: currentSession });
+      }
+
       return jsonResponse({ error: { message: 'Unknown request' } }, 500);
     });
 
@@ -182,6 +262,7 @@ describe('App', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -253,14 +334,55 @@ describe('App', () => {
     // Start session
     const [todayNavButton] = screen.getAllByRole('button', { name: /^Today$/i });
     await userEvent.click(todayNavButton);
-    await screen.findByText(/Today Session/i);
-    const [childSelect] = screen.getAllByLabelText(/Child/i);
-    const [templateSelect] = screen.getAllByLabelText(/Routine template/i);
+    await screen.findByText(/Who is playing today/i);
+    const childSelect = screen.getByLabelText(/^Child$/i, { selector: 'select' }) as HTMLSelectElement;
+    const templateSelect = screen.getByLabelText(/^Routine template$/i, { selector: 'select' }) as HTMLSelectElement;
     await userEvent.selectOptions(childSelect, ['child-1']);
     await userEvent.selectOptions(templateSelect, ['template-1']);
     await userEvent.click(screen.getByRole('button', { name: /Start Session/i }));
 
     await screen.findByText(/Kid Mode/i);
     expect(screen.getByRole('button', { name: /Complete/i })).toBeInTheDocument();
+  });
+
+  it('completes tasks and shows the medal summary', async () => {
+    render(<App />);
+
+    await waitFor(() => expect(window.fetch).toHaveBeenCalled());
+
+    const [firstNameInput] = screen.getAllByLabelText(/First name/i);
+    const [birthdateInput] = screen.getAllByLabelText(/Birthdate/i);
+    const [addChildButton] = screen.getAllByRole('button', { name: /Add child/i });
+    await userEvent.type(firstNameInput, 'Ada');
+    fireEvent.change(birthdateInput, { target: { value: '2015-04-03' } });
+    await userEvent.click(addChildButton);
+    const [templatesNavButton] = screen.getAllByRole('button', { name: /^Templates$/i });
+    await userEvent.click(templatesNavButton);
+    await userEvent.type(screen.getByLabelText(/Template name/i), 'Morning');
+    const taskTitleInputs = screen.getAllByLabelText(/Title/i);
+    await userEvent.clear(taskTitleInputs[0]);
+    await userEvent.type(taskTitleInputs[0], 'Wake up');
+    await userEvent.clear(taskTitleInputs[1]);
+    await userEvent.type(taskTitleInputs[1], 'Brush Teeth');
+    await userEvent.click(screen.getByRole('button', { name: /Create template/i }));
+    await screen.findByText('Morning');
+
+    const [todayNavButton] = screen.getAllByRole('button', { name: /^Today$/i });
+    await userEvent.click(todayNavButton);
+    await screen.findByText(/Who is playing today/i);
+    const childSelect = screen.getByLabelText(/^Child$/i, { selector: 'select' }) as HTMLSelectElement;
+    const templateSelect = screen.getByLabelText(/^Routine template$/i, { selector: 'select' }) as HTMLSelectElement;
+    await userEvent.selectOptions(childSelect, ['child-1']);
+    await userEvent.selectOptions(templateSelect, ['template-1']);
+    await userEvent.click(screen.getByRole('button', { name: /Start Session/i }));
+
+    await screen.findByText(/Kid Mode/i);
+    const completeButton = screen.getByRole('button', { name: /Complete/i });
+    await userEvent.click(completeButton);
+    await screen.findByText(/1 \/ 2 done/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /Complete/i }));
+
+    await screen.findByText(/You earned a Gold medal!/i);
   });
 });

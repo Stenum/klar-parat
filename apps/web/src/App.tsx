@@ -71,50 +71,122 @@ const App = () => {
   const [activeChild, setActiveChild] = useState<Child | null>(null);
   const [showKidMode, setShowKidMode] = useState(false);
   const [sessionProgress, setSessionProgress] = useState<SessionProgressState[]>([]);
+  const [sessionActionPending, setSessionActionPending] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
+  const applySessionUpdate = (session: Session | null) => {
+    setActiveSession(session);
+    setSessionProgress(
+      session
+        ? session.tasks.map((task) => ({
+            completed: Boolean(task.completedAt),
+            skipped: task.skipped
+          }))
+        : []
+    );
+  };
 
   const resetSessionState = () => {
-    setActiveSession(null);
+    applySessionUpdate(null);
     setActiveChild(null);
     setShowKidMode(false);
-    setSessionProgress([]);
+    setSessionError(null);
+    setSessionActionPending(false);
   };
 
   const handleSessionStarted = (session: Session, child: Child) => {
-    setActiveSession(session);
+    applySessionUpdate(session);
     setActiveChild(child);
     setShowKidMode(true);
-    setSessionProgress(
-      session.tasks.map((task) => ({
-        completed: Boolean(task.completedAt),
-        skipped: task.skipped
-      }))
-    );
+    setSessionError(null);
+    setSessionActionPending(false);
   };
 
-  const handleCompleteTask = (index: number) => {
-    setSessionProgress((prev) =>
-      prev.map((state, idx) =>
-        idx === index
-          ? {
-              completed: true,
-              skipped: false
-            }
-          : state
-      )
-    );
+  const finishSession = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/finish`, {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to finalise session');
+      }
+      const data = (await response.json()) as { session: Session };
+      applySessionUpdate(data.session);
+      setSessionError(null);
+    } catch (error) {
+      console.error(error);
+      setSessionError('Unable to finalise the session. Please try again.');
+    }
   };
 
-  const handleSkipTask = (index: number) => {
-    setSessionProgress((prev) =>
-      prev.map((state, idx) =>
-        idx === index
-          ? {
-              completed: false,
-              skipped: true
-            }
-          : state
-      )
-    );
+  const handleCompleteTask = async (index: number) => {
+    if (!activeSession) {
+      return;
+    }
+
+    setSessionActionPending(true);
+    try {
+      const response = await fetch(`/api/sessions/${activeSession.id}/task/${index}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ skipped: false })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update task');
+      }
+
+      const data = (await response.json()) as { session: Session };
+      applySessionUpdate(data.session);
+      setSessionError(null);
+
+      const allHandled = data.session.tasks.every((task) => task.completedAt || task.skipped);
+      if (allHandled && !data.session.medal) {
+        await finishSession(data.session.id);
+      }
+    } catch (error) {
+      console.error(error);
+      setSessionError('Unable to update this task. Please try again.');
+    } finally {
+      setSessionActionPending(false);
+    }
+  };
+
+  const handleSkipTask = async (index: number) => {
+    if (!activeSession) {
+      return;
+    }
+
+    setSessionActionPending(true);
+    try {
+      const response = await fetch(`/api/sessions/${activeSession.id}/task/${index}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ skipped: true })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to skip task');
+      }
+
+      const data = (await response.json()) as { session: Session };
+      applySessionUpdate(data.session);
+      setSessionError(null);
+
+      const allHandled = data.session.tasks.every((task) => task.completedAt || task.skipped);
+      if (allHandled && !data.session.medal) {
+        await finishSession(data.session.id);
+      }
+    } catch (error) {
+      console.error(error);
+      setSessionError('Unable to skip this task. Please try again.');
+    } finally {
+      setSessionActionPending(false);
+    }
   };
 
   return (
@@ -155,6 +227,8 @@ const App = () => {
                 session={activeSession}
                 child={activeChild}
                 progress={sessionProgress}
+                actionPending={sessionActionPending}
+                error={sessionError}
                 onCompleteTask={handleCompleteTask}
                 onSkipTask={handleSkipTask}
                 onReturnToParent={() => setShowKidMode(false)}
@@ -944,7 +1018,7 @@ const TodayManager = ({ activeSession, activeChild, onSessionStarted, onEnterKid
           <div className="space-y-3 rounded-xl border border-dashed border-slate-700 bg-slate-950/20 p-5 text-sm text-slate-300">
             <p className="text-base font-semibold text-slate-100">What happens next?</p>
             <p>Kid Mode will show one task at a time with a giant Complete button.</p>
-            <p>Progress sticks even if you refresh—timing and medals arrive in the next iteration.</p>
+            <p>Progress sticks even if you refresh—Kid Mode now tracks time and medals automatically.</p>
           </div>
         </div>
       )}
@@ -956,62 +1030,136 @@ type KidModeProps = {
   session: Session;
   child: Child;
   progress: SessionProgressState[];
-  onCompleteTask: (index: number) => void;
-  onSkipTask: (index: number) => void;
+  actionPending: boolean;
+  error: string | null;
+  onCompleteTask: (index: number) => Promise<void>;
+  onSkipTask: (index: number) => Promise<void>;
   onReturnToParent: () => void;
   onEndSession: () => void;
 };
 
-const KidMode = ({ session, child, progress, onCompleteTask, onSkipTask, onReturnToParent, onEndSession }: KidModeProps) => {
+const KidMode = ({
+  session,
+  child,
+  progress,
+  actionPending,
+  error,
+  onCompleteTask,
+  onSkipTask,
+  onReturnToParent,
+  onEndSession
+}: KidModeProps) => {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const computeElapsed = () => {
+      if (!session.actualStartAt) {
+        setElapsedSeconds(0);
+        return;
+      }
+
+      const startMs = new Date(session.actualStartAt).getTime();
+      const endMs = session.actualEndAt ? new Date(session.actualEndAt).getTime() : Date.now();
+      const durationSeconds = Math.max(0, Math.round((endMs - startMs) / 1000));
+      setElapsedSeconds(durationSeconds);
+    };
+
+    computeElapsed();
+
+    if (session.actualStartAt && !session.actualEndAt) {
+      const interval = window.setInterval(computeElapsed, 1000);
+      return () => window.clearInterval(interval);
+    }
+
+    return () => undefined;
+  }, [session.actualStartAt, session.actualEndAt]);
+
   const totalTasks = session.tasks.length;
   const completedCount = progress.filter((state) => state.completed).length;
   const completionPercent = totalTasks === 0 ? 0 : Math.round((completedCount / totalTasks) * 100);
-  const currentIndex = progress.findIndex((state) => !state.completed && !state.skipped);
-  const sessionComplete = currentIndex === -1;
-  const currentTask = sessionComplete ? null : session.tasks[currentIndex];
-  const nextTaskIndex = session.tasks.findIndex((_, index) => index > currentIndex && !progress[index]?.completed && !progress[index]?.skipped);
+  const currentIndex = session.tasks.findIndex((task) => !task.completedAt && !task.skipped);
+  const allTasksHandled = session.tasks.every((task) => task.completedAt || task.skipped);
+  const sessionComplete = Boolean(session.medal);
+  const awaitingMedal = allTasksHandled && !sessionComplete;
+  const currentTask = currentIndex === -1 ? null : session.tasks[currentIndex];
+  const nextTaskIndex = session.tasks.findIndex((task, index) => index > currentIndex && !task.completedAt && !task.skipped);
   const nextTask = nextTaskIndex === -1 ? null : session.tasks[nextTaskIndex];
+
+  const formatSeconds = (value: number) => {
+    const minutes = Math.floor(value / 60)
+      .toString()
+      .padStart(2, '0');
+    const seconds = (value % 60).toString().padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  };
+
+  const medalEmoji: Record<'gold' | 'silver' | 'bronze', string> = {
+    gold: '🥇',
+    silver: '🥈',
+    bronze: '🥉'
+  };
+
+  const medalLabel: Record<'gold' | 'silver' | 'bronze', string> = {
+    gold: 'Gold',
+    silver: 'Silver',
+    bronze: 'Bronze'
+  };
+
+  const actualDurationSeconds =
+    session.actualStartAt && session.actualEndAt
+      ? Math.max(
+          0,
+          Math.round((new Date(session.actualEndAt).getTime() - new Date(session.actualStartAt).getTime()) / 1000)
+        )
+      : null;
 
   return (
     <section className="rounded-3xl bg-gradient-to-br from-emerald-500/20 via-slate-900 to-slate-950 p-8 shadow-2xl">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm uppercase tracking-wide text-emerald-200">Kid Mode</p>
           <h2 className="text-3xl font-semibold text-slate-50">Good morning, {child.firstName}!</h2>
           <p className="text-slate-200">Today’s mission: {session.templateSnapshot.name}</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={onReturnToParent}
-            className="rounded-lg border border-slate-300/40 px-4 py-2 text-base font-semibold text-slate-100 transition hover:border-slate-200"
-          >
-            Parent controls
-          </button>
-          <button
-            type="button"
-            onClick={onEndSession}
-            className="rounded-lg bg-rose-500 px-4 py-2 text-base font-semibold text-slate-950 transition hover:bg-rose-400"
-          >
-            End session
-          </button>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <div className="text-sm font-semibold uppercase tracking-wide text-slate-400">Elapsed</div>
+          <div className="text-3xl font-bold text-emerald-200">{formatSeconds(elapsedSeconds)}</div>
+          {!session.actualStartAt && <div className="text-xs text-slate-400">Timer starts after your first task</div>}
         </div>
       </div>
-      <div className="mb-8 h-4 w-full rounded-full bg-slate-800">
-        <div
-          className="h-4 rounded-full bg-emerald-400 transition-all"
-          style={{ width: `${completionPercent}%` }}
-          aria-valuenow={completionPercent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          role="progressbar"
-        />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="h-4 flex-1 rounded-full bg-slate-800">
+          <div
+            className="h-4 rounded-full bg-emerald-400 transition-all"
+            style={{ width: `${completionPercent}%` }}
+            aria-valuenow={completionPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            role="progressbar"
+          />
+        </div>
+        <div className="text-sm font-semibold text-emerald-200">
+          {completedCount} / {totalTasks} done
+        </div>
       </div>
+      {error && (
+        <div className="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
+      )}
       {sessionComplete ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-2xl bg-slate-950/60 p-10 text-center shadow-inner">
-          <p className="text-5xl">🎉</p>
-          <h3 className="text-3xl font-semibold text-emerald-200">All tasks complete!</h3>
-          <p className="text-slate-200">Great job! Medals unlock in the next iteration.</p>
+          <div className="text-6xl">{session.medal ? medalEmoji[session.medal] : '🎉'}</div>
+          <h3 className="text-3xl font-semibold text-emerald-200">
+            {session.medal ? `You earned a ${medalLabel[session.medal]} medal!` : 'All tasks complete!'}
+          </h3>
+          <p className="text-slate-200">
+            Total time {actualDurationSeconds !== null ? formatSeconds(actualDurationSeconds) : '--:--'} vs expected{' '}
+            {Math.round(session.expectedTotalMinutes)} min.
+          </p>
+        </div>
+      ) : awaitingMedal ? (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl bg-slate-950/60 p-10 text-center shadow-inner">
+          <p className="text-4xl">⏳</p>
+          <h3 className="text-2xl font-semibold text-slate-100">Sit tight… computing your medal!</h3>
         </div>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[2fr,1fr]">
@@ -1021,23 +1169,23 @@ const KidMode = ({ session, child, progress, onCompleteTask, onSkipTask, onRetur
               {currentTask?.emoji && <span className="mr-3">{currentTask.emoji}</span>}
               {currentTask?.title}
             </h3>
-            <p className="mt-3 text-lg text-slate-200">
-              {currentTask?.hint ?? 'Tap the big button when you finish!'}
-            </p>
+            <p className="mt-3 text-lg text-slate-200">{currentTask?.hint ?? 'Tap the big button when you finish!'}</p>
             <p className="mt-4 text-sm text-slate-400">Expected {currentTask?.expectedMinutes} minute(s)</p>
             <div className="mt-8 flex flex-wrap gap-4">
               <button
                 type="button"
-                onClick={() => currentIndex !== -1 && onCompleteTask(currentIndex)}
-                className="flex-1 rounded-2xl bg-emerald-400 px-6 py-6 text-3xl font-bold text-slate-950 shadow-xl transition hover:bg-emerald-300"
+                onClick={() => currentIndex !== -1 && void onCompleteTask(currentIndex)}
+                disabled={actionPending || currentIndex === -1}
+                className="flex-1 rounded-2xl bg-emerald-400 px-6 py-6 text-3xl font-bold text-slate-950 shadow-xl transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/50 disabled:text-slate-700"
               >
-                Complete ✅
+                {actionPending ? 'Working…' : 'Complete ✅'}
               </button>
               {session.allowSkip && (
                 <button
                   type="button"
-                  onClick={() => currentIndex !== -1 && onSkipTask(currentIndex)}
-                  className="flex-1 rounded-2xl border-2 border-slate-500 bg-slate-900 px-6 py-6 text-2xl font-semibold text-slate-200 transition hover:border-slate-300"
+                  onClick={() => currentIndex !== -1 && void onSkipTask(currentIndex)}
+                  disabled={actionPending || currentIndex === -1}
+                  className="flex-1 rounded-2xl border-2 border-slate-500 bg-slate-900 px-6 py-6 text-2xl font-semibold text-slate-200 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500"
                 >
                   Skip ⏭️
                 </button>
@@ -1064,11 +1212,27 @@ const KidMode = ({ session, child, progress, onCompleteTask, onSkipTask, onRetur
               )}
             </div>
             <div className="rounded-2xl bg-slate-950/40 p-6 text-sm text-slate-400">
-              <p>Timing & medals unlock soon. For now, celebrate each win together!</p>
+              <p>Stay quick to snag the Gold medal—finish near your expected time!</p>
             </div>
           </aside>
         </div>
       )}
+      <div className="mt-8 flex gap-3">
+        <button
+          type="button"
+          onClick={onReturnToParent}
+          className="rounded-lg border border-slate-300/40 px-4 py-2 text-base font-semibold text-slate-100 transition hover:border-slate-200"
+        >
+          Parent controls
+        </button>
+        <button
+          type="button"
+          onClick={onEndSession}
+          className="rounded-lg bg-rose-500 px-4 py-2 text-base font-semibold text-slate-950 transition hover:bg-rose-400"
+        >
+          End session
+        </button>
+      </div>
     </section>
   );
 };
