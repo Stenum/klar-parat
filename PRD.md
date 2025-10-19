@@ -244,94 +244,80 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * **TTS:** Prefer **client-side** (Web Speech API) to avoid infra costs. If unavailable, fallback to on-screen text.
 * **OpenAI:** Server-side endpoint to generate short messages from prompt templates.
 
-### 6.2 Data Model (minimal)
+### 6.2 Data Model (iteration 1 baseline)
 
-**users**
-
-* `id (pk)`
-* `email (unique)`
-* `password_hash`
-* `created_at`
+_No auth yet; everything is stored locally for a single household._
 
 **children**
 
-* `id (pk)`
-* `user_id (fk users)`
-* `name_first`
+* `id (pk, cuid)`
+* `first_name`
+* `birthdate` (date, ISO string)
+* `active` (bool, default `true`)
 * `created_at`
 
 **templates**
 
-* `id (pk)`
-* `user_id (fk users)`
+* `id (pk, cuid)`
 * `name`
-* `days_active` (array or bitmask)
-* `created_at`, `updated_at`
+* `default_start_time` (`"HH:MM"`, 24h)
+* `default_end_time` (`"HH:MM"`, 24h)
+* `created_at`
+* `updated_at`
 
 **template_tasks**
 
-* `id (pk)`
+* `id (pk, cuid)`
 * `template_id (fk templates)`
-* `order_index`
+* `order_index` (0-based, maintains display order)
 * `title`
 * `emoji` (nullable)
 * `hint` (nullable)
-* `expected_minutes` (nullable)
+* `expected_minutes` (float, ≥ 0, default `1.0`)
 
 **sessions**
 
-* `id (pk)`
-* `user_id (fk users)`
-* `child_id (fk children, nullable if single-child MVP)`
-* `template_snapshot` (json of tasks at start)
-* `start_time`, `end_time` (nullable until finished)
-* `expected_total_minutes` (denormalized)
-* `medal` (enum: gold/silver/bronze)
+* `id (pk, cuid)`
+* `child_id (fk children)`
+* `template_snapshot` (JSON string of the template at start; stored as TEXT in SQLite for now)
+* `planned_start_at`, `planned_end_at`
+* `actual_start_at`, `actual_end_at`
+* `expected_total_minutes`
+* `medal` (nullable until completion)
+* `created_at`
 
 **session_tasks**
 
-* `id (pk)`
+* `id (pk, cuid)`
 * `session_id (fk sessions)`
 * `title`
-* `expected_minutes` (nullable)
-* `completed_at` (timestamp, nullable)
-* `skipped` (bool)
-
-**settings**
-
-* `id (pk)`
-* `user_id (fk users)`
-* `tts_language` (en-US, da-DK)
-* `tone` (playful/coach/calm)
-* `gold_multiplier` (default 1.0)
-* `silver_multiplier` (default 1.3)
-* `default_task_minutes` (default 1)
-* `allow_skip` (bool)
-* `ui_language` (en/da)
+* `expected_minutes`
+* `completed_at` (nullable)
+* `skipped` (bool, default `false`)
 
 ---
 
-## 7) API (example endpoints)
+## 7) API (iteration 1 shell)
 
-> Prefix all with `/api`. Auth via session cookie/JWT.
+> Local-only for now; no auth yet. Successful responses use explicit keys (`{ children }`, `{ template }`, `{ snapshot }`); error
+s follow `{ "error": { "code", "message" } }`.
 
-* `POST /auth/signup { email, password }` → 200 { user }
-* `POST /auth/login { email, password }` → 200 { user }
-* `GET /templates` → list
-* `POST /templates` → create
-* `PUT /templates/:id` → update
-* `DELETE /templates/:id`
-* `POST /sessions/start { template_id, child_id? }` → creates session with snapshot
-* `POST /sessions/:id/task/:taskIndex/complete` → returns message text (generated or fallback)
-* `POST /sessions/:id/finish` → computes medal, returns summary
-* `GET /sessions/recent?limit=14`
-* `POST /generate/encouragement { childFirstName, taskTitle, tone, language }` (server calls OpenAI, returns text)
-* `GET /settings` / `PUT /settings`
+**Children**
 
-**Notes**
+* `GET /api/children` → list children (ordered by `created_at`).
+* `POST /api/children { firstName, birthdate, active? }` → create child.
+* `PUT /api/children/:id { firstName?, birthdate?, active? }` → update fields.
+* `DELETE /api/children/:id` → remove child.
 
-* The `/generate/encouragement` endpoint exists so the client never directly holds the OpenAI key.
-* Cache short positive phrases by situation to reduce API calls (e.g., first task, halfway, last task).
+**Templates**
+
+* `GET /api/templates` → list templates with ordered tasks.
+* `POST /api/templates { name, defaultStartTime, defaultEndTime, tasks[] }` → create template.
+* `PUT /api/templates/:id` → replace template metadata + task list (tasks re-ordered by array index).
+* `DELETE /api/templates/:id` → remove template + tasks.
+* `POST /api/templates/:id/clone-to-today` → returns `{ snapshot }` with `expectedTotalMinutes` for session bootstrapping.
+
+Validation errors return HTTP 400, missing resources 404, and unexpected failures 500.
 
 ---
 
