@@ -1,4 +1,4 @@
-import type { Child, Template } from '@shared/schemas';
+import type { Child, Session, Template } from '@shared/schemas';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,8 @@ describe('App', () => {
   beforeEach(() => {
     const children: Child[] = [];
     const templates: Template[] = [];
+    let currentSession: Session | null = null;
+    let sessionCounter = 0;
 
     vi.spyOn(window, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -93,7 +95,7 @@ describe('App', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tasks: body.tasks.map((task, index) => ({
-            id: `task-${index}`,
+            id: `task-${index}-${templates.length + 1}`,
             title: task.title,
             expectedMinutes: task.expectedMinutes,
             emoji: task.emoji,
@@ -115,6 +117,64 @@ describe('App', () => {
         return jsonResponse(undefined, 204);
       }
 
+      if (url.endsWith('/api/sessions/start') && method === 'POST') {
+        const body = JSON.parse(init?.body as string) as {
+          childId: string;
+          templateId: string;
+          allowSkip?: boolean;
+        };
+        const template = templates.find((item) => item.id === body.templateId);
+        if (!template) {
+          return jsonResponse({ error: { message: 'Template not found' } }, 404);
+        }
+        const expectedTotal = template.tasks.reduce((sum, task) => sum + task.expectedMinutes, 0);
+        const plannedStartAt = new Date().toISOString();
+        const plannedEndAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const session: Session = {
+          id: `session-${++sessionCounter}`,
+          childId: body.childId,
+          allowSkip: body.allowSkip ?? false,
+          plannedStartAt,
+          plannedEndAt,
+          actualStartAt: null,
+          actualEndAt: null,
+          expectedTotalMinutes: expectedTotal,
+          medal: null,
+          templateSnapshot: {
+            templateId: template.id,
+            name: template.name,
+            defaultStartTime: template.defaultStartTime,
+            defaultEndTime: template.defaultEndTime,
+            tasks: template.tasks.map((task) => ({
+              title: task.title,
+              emoji: task.emoji,
+              hint: task.hint,
+              expectedMinutes: task.expectedMinutes,
+              orderIndex: task.orderIndex
+            })),
+            expectedTotalMinutes: expectedTotal
+          },
+          tasks: template.tasks.map((task) => ({
+            id: `session-task-${task.id}`,
+            title: task.title,
+            expectedMinutes: task.expectedMinutes,
+            completedAt: null,
+            skipped: false,
+            orderIndex: task.orderIndex
+          }))
+        };
+        currentSession = session;
+        return jsonResponse({ session }, 201);
+      }
+
+      if (url.match(/\/api\/sessions\//) && method === 'GET') {
+        const sessionId = url.split('/').pop()!;
+        if (currentSession && currentSession.id === sessionId) {
+          return jsonResponse({ session: currentSession });
+        }
+        return jsonResponse({ error: { message: 'Not found' } }, 404);
+      }
+
       return jsonResponse({ error: { message: 'Unknown request' } }, 500);
     });
 
@@ -125,14 +185,14 @@ describe('App', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders navigation with disabled items', async () => {
+  it('renders navigation with Today enabled', async () => {
     render(<App />);
 
     await waitFor(() => expect(window.fetch).toHaveBeenCalled());
 
     expect(screen.getByRole('button', { name: /Children/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Templates/ })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /Today/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Today/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /History/ })).toBeDisabled();
   });
 
@@ -161,5 +221,46 @@ describe('App', () => {
     await userEvent.click(submitButton);
 
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+  });
+
+  it('starts a session and enters kid mode', async () => {
+    render(<App />);
+
+    await waitFor(() => expect(window.fetch).toHaveBeenCalled());
+
+    // Create child
+    const [firstNameInput] = screen.getAllByLabelText(/First name/i);
+    const [birthdateInput] = screen.getAllByLabelText(/Birthdate/i);
+    const [addChildButton] = screen.getAllByRole('button', { name: /Add child/i });
+    await userEvent.type(firstNameInput, 'Ada');
+    fireEvent.change(birthdateInput, { target: { value: '2015-04-03' } });
+    await userEvent.click(addChildButton);
+    await screen.findByText('Ada');
+
+    // Create template
+    const [templatesNavButton] = screen.getAllByRole('button', { name: /^Templates$/i });
+    await userEvent.click(templatesNavButton);
+    await screen.findByText(/Create template/i);
+    await userEvent.type(screen.getByLabelText(/Template name/i), 'Morning');
+    const taskTitleInputs = screen.getAllByLabelText(/Title/i);
+    await userEvent.clear(taskTitleInputs[0]);
+    await userEvent.type(taskTitleInputs[0], 'Wake up');
+    await userEvent.clear(taskTitleInputs[1]);
+    await userEvent.type(taskTitleInputs[1], 'Brush Teeth');
+    await userEvent.click(screen.getByRole('button', { name: /Create template/i }));
+    await screen.findByText('Morning');
+
+    // Start session
+    const [todayNavButton] = screen.getAllByRole('button', { name: /^Today$/i });
+    await userEvent.click(todayNavButton);
+    await screen.findByText(/Today Session/i);
+    const [childSelect] = screen.getAllByLabelText(/Child/i);
+    const [templateSelect] = screen.getAllByLabelText(/Routine template/i);
+    await userEvent.selectOptions(childSelect, ['child-1']);
+    await userEvent.selectOptions(templateSelect, ['template-1']);
+    await userEvent.click(screen.getByRole('button', { name: /Start Session/i }));
+
+    await screen.findByText(/Kid Mode/i);
+    expect(screen.getByRole('button', { name: /Complete/i })).toBeInTheDocument();
   });
 });

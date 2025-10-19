@@ -191,8 +191,8 @@ In `PLAN.md`, every iteration carries a status:
 * **Children**: `first_name`, `birthdate`, `active`.
 * **Templates**: `id`, `name`, `default_start_time`, `default_end_time`.
 * **Template tasks**: `title`, `emoji?`, `hint?`, `expected_minutes` (defaults allowed).
-* **Sessions**: immutable snapshot; planned/actual times; medal.
-* **Session tasks**: timestamps; skipped flag.
+* **Sessions**: immutable snapshot; planned/actual times; `allow_skip`; medal.
+* **Session tasks**: ordered list (`order_index`); timestamps; skipped flag.
 
 **Rules**
 

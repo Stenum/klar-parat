@@ -107,6 +107,52 @@ export const templateSnapshotSchema = z.object({
   expectedTotalMinutes: z.number().nonnegative()
 });
 
+export const sessionTaskSchema = z.object({
+  id: z.string().cuid(),
+  title: z.string(),
+  expectedMinutes: z.number().nonnegative(),
+  completedAt: z.string().datetime().nullable(),
+  skipped: z.boolean(),
+  orderIndex: z.number().int().nonnegative(),
+  emoji: z.string().optional(),
+  hint: z.string().optional()
+});
+
+export const sessionSchema = z.object({
+  id: z.string().cuid(),
+  childId: z.string().cuid(),
+  allowSkip: z.boolean(),
+  plannedStartAt: z.string().datetime(),
+  plannedEndAt: z.string().datetime(),
+  actualStartAt: z.string().datetime().nullable(),
+  actualEndAt: z.string().datetime().nullable(),
+  expectedTotalMinutes: z.number().nonnegative(),
+  medal: z.string().nullable(),
+  templateSnapshot: templateSnapshotSchema,
+  tasks: z.array(sessionTaskSchema)
+});
+
+export const sessionStartSchema = z
+  .object({
+    childId: z.string().cuid(),
+    templateId: z.string().cuid(),
+    plannedStartAt: z.string().datetime().optional(),
+    plannedEndAt: z.string().datetime().optional(),
+    allowSkip: z.boolean().optional().default(false)
+  })
+  .refine(
+    ({ plannedStartAt, plannedEndAt }) => {
+      if (!plannedStartAt || !plannedEndAt) {
+        return true;
+      }
+      return new Date(plannedEndAt).getTime() > new Date(plannedStartAt).getTime();
+    },
+    {
+      message: 'plannedEndAt must be after plannedStartAt',
+      path: ['plannedEndAt']
+    }
+  );
+
 export type ChildCreateInput = z.infer<typeof childCreateSchema>;
 export type ChildUpdateInput = z.infer<typeof childUpdateSchema>;
 export type Child = z.infer<typeof childSchema>;
@@ -118,3 +164,6 @@ export type Template = z.infer<typeof templateSchema>;
 export type TemplateSnapshot = z.infer<typeof templateSnapshotSchema>;
 
 export type TimeHM = z.infer<typeof timeStringSchema>;
+export type Session = z.infer<typeof sessionSchema>;
+export type SessionTask = z.infer<typeof sessionTaskSchema>;
+export type SessionStartInput = z.infer<typeof sessionStartSchema>;
