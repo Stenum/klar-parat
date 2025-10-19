@@ -1,4 +1,8 @@
 # Iteration 0 — Repo, Scaffolding, and Guardrails (1–2 hours)
+**Status:** 🟩 Complete ([PR #1](https://github.com/acme/klar-parat/pull/1) – 2025-10-19)
+
+- What changed: Bootstrapped the monorepo scaffolding across API, web, and shared packages with feature flags and fake integrations.
+- How verified: `npm run lint`, `npm run typecheck`, `npm run test`, and `npm audit`.
 
 **Goal:** A clean, reproducible baseline the agent can extend safely.
 
