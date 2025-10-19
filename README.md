@@ -29,6 +29,12 @@ cp .env.example .env
 npm install
 ```
 
+The root `postinstall` hook automatically runs `prisma generate` for the API workspace. If you change the Prisma schema later, rerun:
+
+```bash
+npm run prisma:generate --workspace @klar-parat/api
+```
+
 ## Development
 
 Run the API (port 4000 by default):
