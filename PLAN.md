@@ -11,7 +11,7 @@
 * Local “fake cloud” stubs:
 
   * `/api/dev/fake-llm` returns a short canned string.
-  * `/api/dev/fake-tts` returns a short MP3 beep (generated once, cached).
+  * `/api/dev/fake-tts` returns a short code generated sine wave sound.
 * Feature flags (env or JSON): `useFakeLLM`, `useFakeTTS`, `enableUrgency`, `enableMedals`.
 
 **Validation**
@@ -160,7 +160,7 @@
 * `POST /api/dev/fake-llm` returns a short sentence with placeholders filled.
 * `POST /api/tts` accepts `{ text, language, voice }`
 
-  * If `useFakeTTS=true`, returns cached beep MP3.
+  * If `useFakeTTS=true`, returns cached code generated sine wave sound.
   * Else, calls real TTS provider (kept off this iteration).
 
 **Web**
