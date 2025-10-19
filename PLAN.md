@@ -1,4 +1,5 @@
 # Iteration 0 — Repo, Scaffolding, and Guardrails (1–2 hours)
+**Status:** 🟨 In Progress (AgentGPT – 2025-10-19)
 
 **Goal:** A clean, reproducible baseline the agent can extend safely.
 

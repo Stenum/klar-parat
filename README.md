@@ -1,1 +1,56 @@
-# klar-parat
+# Klar Parat
+
+Monorepo scaffolding for the Klar Parat morning routine companion. The project follows the plan in [`PLAN.md`](./PLAN.md) and the product contract in [`PRD.md`](./PRD.md).
+
+## Structure
+
+```
+/apps
+  /api    # Express API + Prisma (SQLite)
+  /web    # React + Vite + Tailwind UI
+/packages
+  /shared # TypeScript types and utilities
+```
+
+## Prerequisites
+
+- Node.js 20+
+- npm 9+
+
+Copy the example environment file and adjust values as needed:
+
+```bash
+cp .env.example .env
+```
+
+## Install
+
+```bash
+npm install
+```
+
+## Development
+
+Run the API (port 4000 by default):
+
+```bash
+npm run dev --workspace @klar-parat/api
+```
+
+Run the web app (port 5173 by default):
+
+```bash
+npm run dev --workspace @klar-parat/web
+```
+
+Visit `http://localhost:4000/health` and `http://localhost:5173/` to confirm both surfaces respond with `OK` for iteration 0.
+
+## Quality Checks
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+```
+
+Each command fans out to every workspace so the repo stays consistent.
