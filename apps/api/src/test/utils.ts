@@ -1,6 +1,5 @@
-import { prisma } from '../lib/prisma.js';
-
 export const resetDatabase = async () => {
+  const { prisma } = await import('../lib/prisma.js');
   await prisma.sessionTask.deleteMany();
   await prisma.session.deleteMany();
   await prisma.templateTask.deleteMany();

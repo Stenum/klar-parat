@@ -23,6 +23,10 @@ Copy the example environment file and adjust values as needed:
 cp .env.example .env
 ```
 
+The generated `.env` configures Prisma to use a local SQLite database file (`DATABASE_URL="file:./dev.db"`). The API will create
+and manage this file automatically—no separate database server is required. If you change the location, update `DATABASE_URL`
+accordingly.
+
 ## Install
 
 ```bash
