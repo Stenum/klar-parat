@@ -1,5 +1,9 @@
 # Iteration 0 — Repo, Scaffolding, and Guardrails (1–2 hours)
 
+**Status:** 🟩 Complete (ChatGPT – 2025-10-18)
+
+**Notes:** Scaffolding established with PNPM monorepo, Prisma, CI, and fake services. Verified with `pnpm lint`, `pnpm typecheck`, and `pnpm test`.
+
 **Goal:** A clean, reproducible baseline the agent can extend safely.
 
 **Deliverables**
@@ -23,6 +27,8 @@
 ---
 
 # Iteration 1 — Data Model + Adminless Local App Shell
+
+**Status:** ⬜ Not Started
 
 **Goal:** Minimal DB models and a basic navigation shell—no auth, no users.
 
@@ -60,6 +66,8 @@
 
 # Iteration 2 — Session Creation (Single Child), No Timing Yet
 
+**Status:** ⬜ Not Started
+
 **Goal:** Create a “Today Session” instance from a template for one child and render Kid Mode UI (no clocks, no LLM/TTS).
 
 **API**
@@ -85,6 +93,8 @@
 ---
 
 # Iteration 3 — Timing & Medal Engine (No Urgency Yet)
+
+**Status:** ⬜ Not Started
 
 **Goal:** Time tracking and deterministic medal calculation; still no LLM/TTS.
 
@@ -119,6 +129,8 @@
 ---
 
 # Iteration 4 — Urgency Model (LLM/TTS still fake)
+
+**Status:** ⬜ Not Started
 
 **Goal:** Compute urgency levels and nudge frequency; surface them in the UI (text labels for you to see), but still call **fake** LLM/TTS.
 
@@ -251,6 +263,8 @@
 
 # Iteration 9 — Settings & Fine-Tuning
 
+**Status:** ⬜ Not Started
+
 **Goal:** Expose multipliers and defaults without breaking history.
 
 **Settings**
@@ -265,6 +279,8 @@
 ---
 
 # Iteration 10 — Polish & Guardrails
+
+**Status:** ⬜ Not Started
 
 **Goal:** Make it kid-proof and morning-ready.
 

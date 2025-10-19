@@ -1,0 +1,1 @@
+-- Empty initial migration to confirm Prisma migrations are wired up.

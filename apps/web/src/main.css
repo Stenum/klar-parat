@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Nunito", system-ui, sans-serif;
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+
+body,
+html,
+#root {
+  height: 100%;
+  margin: 0;
+}
