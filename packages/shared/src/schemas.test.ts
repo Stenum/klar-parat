@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   childCreateSchema,
+  medalSchema,
   sessionStartSchema,
+  sessionTaskCompleteSchema,
   templateCreateSchema,
   templateUpdateSchema,
   timeStringSchema
@@ -17,6 +19,23 @@ describe('timeStringSchema', () => {
   it('rejects invalid times', () => {
     expect(() => timeStringSchema.parse('7:30')).toThrow();
     expect(() => timeStringSchema.parse('24:00')).toThrow();
+  });
+});
+
+describe('medalSchema', () => {
+  it('allows only predefined medal values', () => {
+    expect(medalSchema.parse('gold')).toBe('gold');
+    expect(() => medalSchema.parse('platinum')).toThrow();
+  });
+});
+
+describe('sessionTaskCompleteSchema', () => {
+  it('defaults skipped to false when omitted', () => {
+    expect(sessionTaskCompleteSchema.parse(undefined)).toMatchObject({ skipped: false });
+  });
+
+  it('respects explicit skipped values', () => {
+    expect(sessionTaskCompleteSchema.parse({ skipped: true })).toMatchObject({ skipped: true });
   });
 });
 

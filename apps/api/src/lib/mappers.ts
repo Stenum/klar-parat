@@ -44,6 +44,13 @@ export const mapTemplate = (
   updatedAt: toIsoString(template.updatedAt)
 });
 
+const asMedal = (value: string | null): Session['medal'] => {
+  if (value === 'gold' || value === 'silver' || value === 'bronze') {
+    return value;
+  }
+  return null;
+};
+
 export const mapSession = (
   session: PrismaSession & { tasks: PrismaSessionTask[] }
 ): Session => {
@@ -59,7 +66,7 @@ export const mapSession = (
     actualStartAt: session.actualStartAt ? toIsoString(session.actualStartAt) : null,
     actualEndAt: session.actualEndAt ? toIsoString(session.actualEndAt) : null,
     expectedTotalMinutes: session.expectedTotalMinutes,
-    medal: session.medal ?? null,
+    medal: asMedal(session.medal),
     templateSnapshot: snapshot,
     tasks: session.tasks
       .slice()

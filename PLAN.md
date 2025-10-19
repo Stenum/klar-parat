@@ -95,6 +95,9 @@
 
 # Iteration 3 — Timing & Medal Engine (No Urgency Yet)
 
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-22)
+  - PR TBD — Implemented completion/finish APIs, medal logic, and Kid Mode timer/medal UI; verified with `npm run lint`, `npm run typecheck`, and `npm run test`.
+
 **Goal:** Time tracking and deterministic medal calculation; still no LLM/TTS.
 
 **Rules**

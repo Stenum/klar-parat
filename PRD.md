@@ -284,7 +284,7 @@ _No auth yet; everything is stored locally for a single household._
 * `allow_skip` (bool, default `false`)
 * `actual_start_at`, `actual_end_at`
 * `expected_total_minutes`
-* `medal` (nullable until completion)
+* `medal` (`'gold' | 'silver' | 'bronze'`, nullable until completion)
 * `created_at`
 
 **session_tasks**
@@ -323,6 +323,8 @@ s follow `{ "error": { "code", "message" } }`.
 
 * `POST /api/sessions/start { childId, templateId, plannedStartAt?, plannedEndAt?, allowSkip? }` → create snapshot + tasks.
 * `GET /api/sessions/:id` → fetch session with ordered tasks and template snapshot.
+* `POST /api/sessions/:id/task/:index/complete { skipped? }` → mark task done or skipped (idempotent). Sets `actual_start_at` on the first non-skipped completion.
+* `POST /api/sessions/:id/finish` → require all tasks handled, stamp `actual_end_at`, and assign medal based on total duration vs. `expected_total_minutes`.
 
 Validation errors return HTTP 400, missing resources 404, and unexpected failures 500.
 
@@ -350,6 +352,7 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 
 * If the browser blocks autoplay TTS, show a “Tap to hear” button.
 * If a task is accidentally marked done, parent can undo from a parent-only drawer (pin-protected).
+* Timer starts on the first completed task (or manual start) so idle time before beginning doesn’t count toward the medal. Finishing with only skipped tasks yields a zero-duration Gold.
 
 ### 8.3 Parent reviews summary
 

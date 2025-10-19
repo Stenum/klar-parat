@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
@@ -76,5 +76,88 @@ describe.sequential('sessions routes', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error.message).toContain('Template not found');
+  });
+
+  it('marks task completion, enforces finishing rules, and assigns medals', async () => {
+    vi.useFakeTimers();
+    const startTime = new Date('2025-01-01T07:00:00.000Z');
+    vi.setSystemTime(startTime);
+
+    const { child, template } = await createFixtures();
+
+    const startResponse = await request(app).post('/api/sessions/start').send({
+      childId: child.id,
+      templateId: template.id
+    });
+
+    const sessionId = startResponse.body.session.id as string;
+
+    const completeFirst = await request(app)
+      .post(`/api/sessions/${sessionId}/task/0/complete`)
+      .send({});
+
+    expect(completeFirst.status).toBe(200);
+    expect(completeFirst.body.session.actualStartAt).toBeTruthy();
+    expect(completeFirst.body.session.tasks[0].completedAt).toBeTruthy();
+
+    const prematureFinish = await request(app).post(`/api/sessions/${sessionId}/finish`).send();
+    expect(prematureFinish.status).toBe(400);
+    expect(prematureFinish.body.error.message).toContain('All tasks must be completed');
+
+    vi.setSystemTime(new Date(startTime.getTime() + 9 * 60 * 1000));
+
+    const completeSecond = await request(app)
+      .post(`/api/sessions/${sessionId}/task/1/complete`)
+      .send({});
+    expect(completeSecond.status).toBe(200);
+
+    const finishResponse = await request(app).post(`/api/sessions/${sessionId}/finish`).send();
+    expect(finishResponse.status).toBe(200);
+    expect(finishResponse.body.session.medal).toBe('silver');
+    expect(finishResponse.body.session.actualEndAt).toBeTruthy();
+    expect(new Date(finishResponse.body.session.actualEndAt).getTime()).toBeGreaterThan(
+      new Date(finishResponse.body.session.actualStartAt!).getTime()
+    );
+
+    const idempotentFinish = await request(app).post(`/api/sessions/${sessionId}/finish`).send();
+    expect(idempotentFinish.status).toBe(200);
+    expect(idempotentFinish.body.session.medal).toBe('silver');
+
+    vi.useRealTimers();
+  });
+
+  it('supports skipping tasks and still finishing with a medal', async () => {
+    vi.useFakeTimers();
+    const now = new Date('2025-01-01T08:00:00.000Z');
+    vi.setSystemTime(now);
+
+    const { child, template } = await createFixtures();
+    const startResponse = await request(app).post('/api/sessions/start').send({
+      childId: child.id,
+      templateId: template.id,
+      allowSkip: true
+    });
+
+    const sessionId = startResponse.body.session.id as string;
+
+    const skipFirst = await request(app)
+      .post(`/api/sessions/${sessionId}/task/0/complete`)
+      .send({ skipped: true });
+    expect(skipFirst.status).toBe(200);
+    expect(skipFirst.body.session.tasks[0].skipped).toBe(true);
+    expect(skipFirst.body.session.actualStartAt).toBeNull();
+
+    const skipSecond = await request(app)
+      .post(`/api/sessions/${sessionId}/task/1/complete`)
+      .send({ skipped: true });
+    expect(skipSecond.status).toBe(200);
+
+    const finishResponse = await request(app).post(`/api/sessions/${sessionId}/finish`).send();
+    expect(finishResponse.status).toBe(200);
+    expect(finishResponse.body.session.medal).toBe('gold');
+    expect(finishResponse.body.session.actualStartAt).toBeTruthy();
+    expect(finishResponse.body.session.actualStartAt).toBe(finishResponse.body.session.actualEndAt);
+
+    vi.useRealTimers();
   });
 });

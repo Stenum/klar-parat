@@ -107,6 +107,8 @@ export const templateSnapshotSchema = z.object({
   expectedTotalMinutes: z.number().nonnegative()
 });
 
+export const medalSchema = z.enum(['gold', 'silver', 'bronze']);
+
 export const sessionTaskSchema = z.object({
   id: z.string().cuid(),
   title: z.string(),
@@ -127,10 +129,16 @@ export const sessionSchema = z.object({
   actualStartAt: z.string().datetime().nullable(),
   actualEndAt: z.string().datetime().nullable(),
   expectedTotalMinutes: z.number().nonnegative(),
-  medal: z.string().nullable(),
+  medal: medalSchema.nullable(),
   templateSnapshot: templateSnapshotSchema,
   tasks: z.array(sessionTaskSchema)
 });
+
+export const sessionTaskCompleteSchema = z
+  .object({
+    skipped: z.boolean().optional().default(false)
+  })
+  .default({ skipped: false });
 
 export const sessionStartSchema = z
   .object({
@@ -167,3 +175,4 @@ export type TimeHM = z.infer<typeof timeStringSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type SessionTask = z.infer<typeof sessionTaskSchema>;
 export type SessionStartInput = z.infer<typeof sessionStartSchema>;
+export type SessionTaskCompleteInput = z.infer<typeof sessionTaskCompleteSchema>;
