@@ -49,6 +49,8 @@ Run the web app (port 5173 by default):
 npm run dev --workspace @klar-parat/web
 ```
 
+The Vite dev server proxies `/api/*` requests to the API at `http://localhost:4000`, so keep the API dev server running alongside the web shell to avoid network errors.
+
 Visit `http://localhost:4000/health` and `http://localhost:5173/` to confirm both surfaces respond with `OK` for iteration 0.
 
 ## Quality Checks
