@@ -169,6 +169,8 @@
 
 # Iteration 5 — Real TTS Playback Pipeline With Fake LLM
 
+**Status:** 🟩 Complete ([fix(I5): Prevent duplicate nudge TTS fetches](https://github.com/acme/klar-parat/pull/123) – 2025-10-24)
+
 **Goal:** End-to-end audio playback on device using the fake LLM, ensuring autoplay permissions and buffering are handled.
 
 **API**
@@ -184,9 +186,9 @@
 * On session start, require a single tap “Enable Voice” (for autoplay policies).
 * After each completion and on nudges, call `/tts` and play returned audio.
 
-**Validation**
+**What changed:** Implemented `/api/tts` with fake audio when flagged, required a single Kid Mode voice enable gesture, and routed completion/nudge prompts through the fake LLM + TTS pipeline with duplicate fetch protection.
 
-* Hear audio after each completion and on mid-task nudge with a single initial gesture.
+**How verified:** `npm run lint`, `npm run typecheck`, `npm run test`.
 
 **Why now?** TTS streaming and browser policies are the most brittle UX. Solve this with a deterministic fake LLM before LLM variability enters.
 

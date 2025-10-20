@@ -177,6 +177,10 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
   1. **Template snippets** (parent-authored per task, optional).
   2. **Generated text** via OpenAI based on a style prompt + child name + task context.
 * TTS playback of the final text (Web Speech API or client-side TTS where available; fallback: display text balloon).
+* Kid Mode presents a one-time “Enable Voice” control at session start to satisfy autoplay restrictions; audio playback is
+  queued until permission is granted.
+* Development stub: `/api/tts` returns a deterministic sine-wave clip when `useFakeTTS=true` so playback can be verified without
+  calling a provider.
 * Safety filter: no personal data sent in prompts beyond first name (configurable).
 
 **Acceptance Criteria**

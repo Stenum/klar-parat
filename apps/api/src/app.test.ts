@@ -28,4 +28,13 @@ describe('fake dev endpoints', () => {
     expect(response.status).toBe(200);
     expect(response.body.audioUrl).toMatch(/^data:audio\/wav;base64,/);
   });
+
+  it('returns audio for /api/tts when fake flag is enabled', async () => {
+    const app = createApp();
+    const response = await request(app)
+      .post('/api/tts')
+      .send({ text: 'Hello', language: 'en-US', voice: 'default' });
+    expect(response.status).toBe(200);
+    expect(response.body.audioUrl).toMatch(/^data:audio\/wav;base64,/);
+  });
 });

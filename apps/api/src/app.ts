@@ -5,6 +5,7 @@ import { registerChildrenRoutes } from './routes/children.js';
 import { registerDevRoutes } from './routes/dev.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerTemplateRoutes } from './routes/templates.js';
+import { registerTtsRoutes } from './routes/tts.js';
 
 export const createApp = () => {
   const app = express();
@@ -19,6 +20,7 @@ export const createApp = () => {
   registerChildrenRoutes(app);
   registerTemplateRoutes(app);
   registerSessionRoutes(app);
+  registerTtsRoutes(app);
   registerDevRoutes(app);
 
   return app;
