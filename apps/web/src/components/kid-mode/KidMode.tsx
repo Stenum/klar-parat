@@ -48,6 +48,10 @@ type KidModeProps = {
   error: string | null;
   telemetry: SessionTelemetry | null;
   nudgeEvents: SessionNudgeEvent[];
+  voiceEnabled: boolean;
+  voicePending: boolean;
+  voiceError: string | null;
+  onEnableVoice: () => Promise<void>;
   onCompleteTask: (index: number) => Promise<void>;
   onSkipTask: (index: number) => Promise<void>;
   onReturnToParent: () => void;
@@ -62,6 +66,10 @@ export const KidMode: FC<KidModeProps> = ({
   error,
   telemetry,
   nudgeEvents,
+  voiceEnabled,
+  voicePending,
+  voiceError,
+  onEnableVoice,
   onCompleteTask,
   onSkipTask,
   onReturnToParent,
@@ -142,6 +150,29 @@ export const KidMode: FC<KidModeProps> = ({
           <div className="text-3xl font-bold text-emerald-200">{formatSeconds(elapsedSeconds)}</div>
           {!session.actualStartAt && <div className="text-xs text-slate-400">Timer starts after your first task</div>}
         </div>
+      </div>
+      <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-slate-950/70 p-4 text-sm text-emerald-100">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="font-semibold uppercase tracking-wide text-emerald-200">Voice feedback</p>
+          {voiceEnabled ? (
+            <span className="flex items-center gap-2 text-xs text-emerald-300">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" aria-hidden /> Ready
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void onEnableVoice()}
+              disabled={voicePending}
+              className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/60"
+            >
+              {voicePending ? 'Enabling…' : 'Enable Voice 🔊'}
+            </button>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-emerald-200/80">Tap once so we can cheer after every task and nudge.</p>
+        {voiceError ? (
+          <p className="mt-2 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-100">{voiceError}</p>
+        ) : null}
       </div>
       <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-slate-950/70 p-4 text-sm text-emerald-100">
         <p className="font-semibold">

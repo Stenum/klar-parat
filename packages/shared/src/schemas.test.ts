@@ -8,7 +8,8 @@ import {
   sessionTelemetrySchema,
   templateCreateSchema,
   templateUpdateSchema,
-  timeStringSchema
+  timeStringSchema,
+  ttsRequestSchema
 } from './schemas.js';
 
 describe('timeStringSchema', () => {
@@ -155,6 +156,25 @@ describe('sessionTelemetrySchema', () => {
         timeRemainingMinutes: -1,
         paceDelta: 'slow'
       })
+    ).toThrow();
+  });
+});
+
+describe('ttsRequestSchema', () => {
+  it('requires text, language, and voice identifiers', () => {
+    const parsed = ttsRequestSchema.parse({
+      text: 'Great job finishing that task!',
+      language: 'en-US',
+      voice: 'kiddo'
+    });
+
+    expect(parsed.voice).toBe('kiddo');
+
+    expect(() =>
+      ttsRequestSchema.parse({ text: '', language: 'en-US', voice: 'kiddo' })
+    ).toThrow();
+    expect(() =>
+      ttsRequestSchema.parse({ text: 'Hi', language: '', voice: 'kiddo' })
     ).toThrow();
   });
 });

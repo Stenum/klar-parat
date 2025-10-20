@@ -153,6 +153,24 @@ export const sessionTaskCompleteSchema = z
   })
   .default({ skipped: false });
 
+export const ttsRequestSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(1, 'text is required')
+    .max(500, 'text must be 500 characters or fewer'),
+  language: z
+    .string()
+    .trim()
+    .min(2, 'language code is required')
+    .max(10, 'language code must be 10 characters or fewer'),
+  voice: z
+    .string()
+    .trim()
+    .min(1, 'voice identifier is required')
+    .max(50, 'voice identifier must be 50 characters or fewer')
+});
+
 export const sessionStartSchema = z
   .object({
     childId: z.string().cuid(),
@@ -191,3 +209,4 @@ export type SessionStartInput = z.infer<typeof sessionStartSchema>;
 export type SessionTaskCompleteInput = z.infer<typeof sessionTaskCompleteSchema>;
 export type SessionTelemetry = z.infer<typeof sessionTelemetrySchema>;
 export type SessionNudgeEvent = z.infer<typeof sessionNudgeEventSchema>;
+export type TtsRequestInput = z.infer<typeof ttsRequestSchema>;

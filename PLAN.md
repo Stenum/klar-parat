@@ -169,6 +169,8 @@
 
 # Iteration 5 — Real TTS Playback Pipeline With Fake LLM
 
+**Status:** 🟨 In Progress (gpt-5-codex – 2025-10-24)
+
 **Goal:** End-to-end audio playback on device using the fake LLM, ensuring autoplay permissions and buffering are handled.
 
 **API**
