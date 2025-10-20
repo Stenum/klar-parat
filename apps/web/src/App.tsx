@@ -28,6 +28,7 @@ const App = () => {
   const [nudgeEvents, setNudgeEvents] = useState<SessionNudgeEvent[]>([]);
   const voiceQueueRef = useRef<VoiceRequest[]>([]);
   const voiceProcessingRef = useRef(false);
+  const processedNudgeKeysRef = useRef<Set<string>>(new Set());
   const {
     enabled: voiceEnabled,
     enabling: voiceEnabling,
@@ -52,6 +53,7 @@ const App = () => {
     setNudgeEvents([]);
     voiceQueueRef.current = [];
     voiceProcessingRef.current = false;
+    processedNudgeKeysRef.current = new Set();
     setVoiceError(null);
   }, [applySessionUpdate, setVoiceError]);
 
@@ -66,6 +68,7 @@ const App = () => {
       setNudgeEvents([]);
       voiceQueueRef.current = [];
       voiceProcessingRef.current = false;
+      processedNudgeKeysRef.current = new Set();
       setVoiceError(null);
     },
     [applySessionUpdate, setVoiceError]
@@ -217,11 +220,15 @@ const App = () => {
         if (data.telemetry.nudges.length > 0) {
           setNudgeEvents((current) => {
             const existing = new Set(current.map((event) => `${event.sessionTaskId}:${event.threshold}`));
-            const additions = data.telemetry.nudges.filter(
-              (event) => !existing.has(`${event.sessionTaskId}:${event.threshold}`)
-            );
+            const additions = data.telemetry.nudges.filter((event) => {
+              const key = `${event.sessionTaskId}:${event.threshold}`;
+              return !existing.has(key) && !processedNudgeKeysRef.current.has(key);
+            });
+
             if (additions.length > 0) {
               additions.forEach((event) => {
+                const key = `${event.sessionTaskId}:${event.threshold}`;
+                processedNudgeKeysRef.current.add(key);
                 const task = tasksById.get(event.sessionTaskId);
                 enqueueVoiceRequest({
                   type: 'nudge',
@@ -231,6 +238,7 @@ const App = () => {
               });
               return [...current, ...additions];
             }
+
             return current;
           });
         }
