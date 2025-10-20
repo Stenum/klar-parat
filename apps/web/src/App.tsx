@@ -1,12 +1,12 @@
 import type { Child, Session } from '@shared/schemas';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ChildrenManager } from './components/children/ChildrenManager';
 import { KidMode } from './components/kid-mode/KidMode';
 import { getInitialNavKey, type NavKey, SidebarNav } from './components/navigation/SidebarNav';
 import { TemplatesManager } from './components/templates/TemplatesManager';
 import { TodayManager } from './components/today/TodayManager';
-import type { SessionProgressState } from './types/session';
+import type { SessionNudgeEvent, SessionProgressState, SessionTelemetry } from './types/session';
 import { deriveSessionProgress } from './utils/sessionProgress';
 
 const App = () => {
@@ -17,6 +17,8 @@ const App = () => {
   const [sessionProgress, setSessionProgress] = useState<SessionProgressState[]>([]);
   const [sessionActionPending, setSessionActionPending] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<SessionTelemetry | null>(null);
+  const [nudgeEvents, setNudgeEvents] = useState<SessionNudgeEvent[]>([]);
 
   const applySessionUpdate = useCallback((session: Session | null) => {
     setActiveSession(session);
@@ -29,6 +31,8 @@ const App = () => {
     setShowKidMode(false);
     setSessionError(null);
     setSessionActionPending(false);
+    setTelemetry(null);
+    setNudgeEvents([]);
   }, [applySessionUpdate]);
 
   const handleSessionStarted = useCallback(
@@ -38,6 +42,8 @@ const App = () => {
       setShowKidMode(true);
       setSessionError(null);
       setSessionActionPending(false);
+      setTelemetry(null);
+      setNudgeEvents([]);
     },
     [applySessionUpdate]
   );
@@ -49,6 +55,50 @@ const App = () => {
   const handleReturnToParent = useCallback(() => {
     setShowKidMode(false);
   }, []);
+
+  useEffect(() => {
+    if (!activeSession || !showKidMode) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let interval: number | null = null;
+
+    const fetchTelemetry = async () => {
+      try {
+        const response = await fetch(`/api/sessions/${activeSession.id}/telemetry`);
+        if (!response.ok) {
+          throw new Error('Failed to load telemetry');
+        }
+        const data = (await response.json()) as { telemetry: SessionTelemetry };
+        if (cancelled) {
+          return;
+        }
+        setTelemetry(data.telemetry);
+        if (data.telemetry.nudges.length > 0) {
+          setNudgeEvents((current) => {
+            const existing = new Set(current.map((event) => `${event.sessionTaskId}:${event.threshold}`));
+            const additions = data.telemetry.nudges.filter(
+              (event) => !existing.has(`${event.sessionTaskId}:${event.threshold}`)
+            );
+            return additions.length > 0 ? [...current, ...additions] : current;
+          });
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    void fetchTelemetry();
+    interval = window.setInterval(fetchTelemetry, 5000);
+
+    return () => {
+      cancelled = true;
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+    };
+  }, [activeSession, showKidMode]);
 
   const finishSession = useCallback(
     async (sessionId: string) => {
@@ -167,6 +217,8 @@ const App = () => {
                 progress={sessionProgress}
                 actionPending={sessionActionPending}
                 error={sessionError}
+                telemetry={telemetry}
+                nudgeEvents={nudgeEvents}
                 onCompleteTask={handleCompleteTask}
                 onSkipTask={handleSkipTask}
                 onReturnToParent={handleReturnToParent}

@@ -167,6 +167,21 @@ describe('App', () => {
         return jsonResponse({ session }, 201);
       }
 
+      if (url.endsWith('/telemetry') && method === 'GET') {
+        if (!currentSession) {
+          return jsonResponse({ error: { message: 'Not found' } }, 404);
+        }
+
+        return jsonResponse({
+          telemetry: {
+            urgencyLevel: 1,
+            timeRemainingMinutes: 42,
+            paceDelta: 0.05,
+            nudges: []
+          }
+        });
+      }
+
       if (url.match(/\/api\/sessions\//) && method === 'GET') {
         const sessionId = url.split('/').pop()!;
         if (currentSession && currentSession.id === sessionId) {
@@ -342,6 +357,7 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /Start Session/i }));
 
     await screen.findByText(/Kid Mode/i);
+    await screen.findByText(/Urgency: L1/i);
     expect(screen.getByRole('button', { name: /Complete/i })).toBeInTheDocument();
   });
 
@@ -377,6 +393,7 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /Start Session/i }));
 
     await screen.findByText(/Kid Mode/i);
+    await screen.findByText(/Urgency: L1/i);
     const completeButton = screen.getByRole('button', { name: /Complete/i });
     await userEvent.click(completeButton);
     await screen.findByText(/1 \/ 2 done/i);

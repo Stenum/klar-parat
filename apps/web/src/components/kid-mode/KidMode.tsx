@@ -2,7 +2,23 @@ import type { Child, Session } from '@shared/schemas';
 import type { FC } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { SessionProgressState } from '../../types/session';
+import type {
+  SessionNudgeEvent,
+  SessionProgressState,
+  SessionTelemetry
+} from '../../types/session';
+
+const nudgeThresholdLabel: Record<SessionNudgeEvent['threshold'], string> = {
+  first: '33%',
+  second: '66%',
+  final: '100%'
+};
+
+const formatNudgeTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 
 const medalEmoji: Record<'gold' | 'silver' | 'bronze', string> = {
   gold: '🥇',
@@ -30,6 +46,8 @@ type KidModeProps = {
   progress: SessionProgressState[];
   actionPending: boolean;
   error: string | null;
+  telemetry: SessionTelemetry | null;
+  nudgeEvents: SessionNudgeEvent[];
   onCompleteTask: (index: number) => Promise<void>;
   onSkipTask: (index: number) => Promise<void>;
   onReturnToParent: () => void;
@@ -42,6 +60,8 @@ export const KidMode: FC<KidModeProps> = ({
   progress,
   actionPending,
   error,
+  telemetry,
+  nudgeEvents,
   onCompleteTask,
   onSkipTask,
   onReturnToParent,
@@ -83,6 +103,8 @@ export const KidMode: FC<KidModeProps> = ({
   const completionPercent = totalTasks === 0 ? 0 : Math.round((completedCount / totalTasks) * 100);
 
   const { actualStartAt, actualEndAt } = session;
+  const lastNudge = nudgeEvents.length > 0 ? nudgeEvents[nudgeEvents.length - 1] : null;
+  const formattedPaceDelta = telemetry ? telemetry.paceDelta.toFixed(2) : '0.00';
 
   useEffect(() => {
     const computeElapsed = () => {
@@ -119,6 +141,34 @@ export const KidMode: FC<KidModeProps> = ({
           <div className="text-sm font-semibold uppercase tracking-wide text-slate-400">Elapsed</div>
           <div className="text-3xl font-bold text-emerald-200">{formatSeconds(elapsedSeconds)}</div>
           {!session.actualStartAt && <div className="text-xs text-slate-400">Timer starts after your first task</div>}
+        </div>
+      </div>
+      <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-slate-950/70 p-4 text-sm text-emerald-100">
+        <p className="font-semibold">
+          Urgency: L{telemetry ? telemetry.urgencyLevel : '–'} ·{' '}
+          {telemetry ? `${telemetry.timeRemainingMinutes}m left` : 'calculating…'}
+        </p>
+        <p className="mt-1 text-xs text-emerald-200/80">Pace Δ {formattedPaceDelta}</p>
+        <div className="mt-3 space-y-1 text-xs text-emerald-200/70">
+          {nudgeEvents.length === 0 ? (
+            <p>No nudges fired yet.</p>
+          ) : (
+            <>
+              <p className="font-semibold text-emerald-200">Mid-task nudges</p>
+              <ul className="space-y-1">
+                {nudgeEvents.map((event) => (
+                  <li key={`${event.sessionTaskId}-${event.threshold}`}>
+                    {nudgeThresholdLabel[event.threshold]} · {formatNudgeTime(event.firedAt)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {lastNudge ? (
+            <p className="pt-1 text-emerald-300">
+              Last: {nudgeThresholdLabel[lastNudge.threshold]} at {formatNudgeTime(lastNudge.firedAt)}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

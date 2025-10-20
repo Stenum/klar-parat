@@ -147,7 +147,12 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
   * Bronze > Silver threshold
 * Optional **per-task soft timers**: if a task takes > 2× its expected minutes, show a gentle nudge message next time that task appears (learning hint).
 * **Urgency levels** (0–3) derived from pace delta inform voice tone and board status badges.
+  * Level 0 if pace delta ≤ **-0.15** (well ahead).
+  * Level 1 if pace delta ≤ **0.10** (on pace).
+  * Level 2 if pace delta ≤ **0.30** (needs encouragement).
+  * Level 3 when pace delta > 0.30 (running late).
 * **Mid-task encouragement cadence**: schedule up to three nudges per task at 33%, 66%, and 100% of its expected minutes elapsed (clamped to completion) even before expected time is exceeded; mark each as fired to avoid duplicates.
+  * Persist nudge fire times per task (`*_fired_at`) to prevent repeat prompts.
 
 **Acceptance Criteria**
 
@@ -302,6 +307,8 @@ _No auth yet; everything is stored locally for a single household._
 * `expected_minutes`
 * `completed_at` (nullable)
 * `skipped` (bool, default `false`)
+* `started_at` (nullable; stamped when task becomes active)
+* `nudge_first_fired_at`, `nudge_second_fired_at`, `nudge_final_fired_at` (nullable timestamps)
 
 ---
 
@@ -331,6 +338,7 @@ s follow `{ "error": { "code", "message" } }`.
 * `GET /api/sessions/:id` → fetch session with ordered tasks and template snapshot.
 * `POST /api/sessions/:id/task/:index/complete { skipped? }` → mark task done or skipped (idempotent). Sets `actual_start_at` on the first non-skipped completion.
 * `POST /api/sessions/:id/finish` → require all tasks handled, stamp `actual_end_at`, and assign medal based on total duration vs. `expected_total_minutes`.
+* `GET /api/sessions/:id/telemetry` → returns `{ telemetry }` with `urgencyLevel (0–3)`, `timeRemainingMinutes`, `paceDelta`, and newly fired `nudges[]` per active task threshold.
 
 Validation errors return HTTP 400, missing resources 404, and unexpected failures 500.
 

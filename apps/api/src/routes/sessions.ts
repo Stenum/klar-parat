@@ -1,8 +1,10 @@
 import {
   computeMedal,
+  computeUrgency,
   sessionSchema,
   sessionStartSchema,
   sessionTaskCompleteSchema,
+  sessionTelemetrySchema,
   templateSnapshotSchema
 } from '@klar-parat/shared';
 import type { Express } from 'express';
@@ -90,6 +92,8 @@ router.post('/start', async (req, res) => {
         }
       });
 
+      const firstTaskActivation = new Date();
+
       await Promise.all(
         snapshot.tasks.map((task) =>
           tx.sessionTask.create({
@@ -97,7 +101,8 @@ router.post('/start', async (req, res) => {
               sessionId: session.id,
               title: task.title,
               expectedMinutes: task.expectedMinutes,
-              orderIndex: task.orderIndex
+              orderIndex: task.orderIndex,
+              startedAt: task.orderIndex === 0 ? firstTaskActivation : null
             }
           })
         )
@@ -134,6 +139,88 @@ router.get('/:id', async (req, res) => {
     }
 
     res.json({ session: sessionSchema.parse(mapSession(session)) });
+  } catch (error) {
+    console.error(error);
+    sendServerError(res);
+  }
+});
+
+router.get('/:id/telemetry', async (req, res) => {
+  const { id } = req.params;
+  const now = new Date();
+
+  try {
+    const telemetry = await prisma.$transaction(async (tx) => {
+      const session = await tx.session.findUnique({
+        where: { id },
+        include: { tasks: true }
+      });
+
+      if (!session) {
+        return null;
+      }
+
+      const completedExpectedMinutes = session.tasks
+        .filter((task) => task.completedAt || task.skipped)
+        .reduce((total, task) => total + task.expectedMinutes, 0);
+
+      const urgency = computeUrgency({
+        plannedStartAt: session.plannedStartAt,
+        plannedEndAt: session.plannedEndAt,
+        expectedTotalMinutes: session.expectedTotalMinutes,
+        completedExpectedMinutes,
+        now
+      });
+
+      const orderedTasks = session.tasks.slice().sort((a, b) => a.orderIndex - b.orderIndex);
+      const activeTask = orderedTasks.find((task) => !task.completedAt && !task.skipped);
+
+      const nudges: { sessionTaskId: string; threshold: 'first' | 'second' | 'final'; firedAt: string }[] = [];
+
+      if (activeTask) {
+        const startedAt = activeTask.startedAt ?? session.actualStartAt ?? session.plannedStartAt;
+        const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
+        const thresholds = [
+          { key: 'nudgeFirstFiredAt' as const, ratio: 1 / 3, label: 'first' as const },
+          { key: 'nudgeSecondFiredAt' as const, ratio: 2 / 3, label: 'second' as const },
+          { key: 'nudgeFinalFiredAt' as const, ratio: 1, label: 'final' as const }
+        ];
+
+        for (const threshold of thresholds) {
+          const targetSeconds = Math.max(1, Math.round(activeTask.expectedMinutes * 60 * threshold.ratio));
+          const alreadyFired = activeTask[threshold.key];
+
+          if (elapsedSeconds >= targetSeconds && !alreadyFired) {
+            await tx.sessionTask.update({
+              where: { id: activeTask.id },
+              data: { [threshold.key]: now }
+            });
+
+            // Mutate local copy so later thresholds in the loop respect the update.
+            activeTask[threshold.key] = now;
+
+            nudges.push({
+              sessionTaskId: activeTask.id,
+              threshold: threshold.label,
+              firedAt: now.toISOString()
+            });
+          }
+        }
+      }
+
+      return sessionTelemetrySchema.parse({
+        urgencyLevel: urgency.urgencyLevel,
+        timeRemainingMinutes: urgency.timeRemainingMinutes,
+        paceDelta: urgency.paceDelta,
+        nudges
+      });
+    });
+
+    if (!telemetry) {
+      return sendNotFound(res, 'Session not found');
+    }
+
+    res.json({ telemetry });
   } catch (error) {
     console.error(error);
     sendServerError(res);
@@ -201,6 +288,23 @@ router.post('/:id/task/:index/complete', async (req, res) => {
         await tx.session.update({
           where: { id },
           data: { actualStartAt: now }
+        });
+      }
+
+      const nextTask = await tx.sessionTask.findFirst({
+        where: {
+          sessionId: session.id,
+          orderIndex: { gt: orderIndex },
+          completedAt: null,
+          skipped: false
+        },
+        orderBy: { orderIndex: 'asc' }
+      });
+
+      if (nextTask && !nextTask.startedAt) {
+        await tx.sessionTask.update({
+          where: { id: nextTask.id },
+          data: { startedAt: now }
         });
       }
 
