@@ -56,6 +56,7 @@ type KidModeProps = {
   onSkipTask: (index: number) => Promise<void>;
   onReturnToParent: () => void;
   onEndSession: () => void;
+  showDebugTelemetry: boolean;
 };
 
 export const KidMode: FC<KidModeProps> = ({
@@ -73,7 +74,8 @@ export const KidMode: FC<KidModeProps> = ({
   onCompleteTask,
   onSkipTask,
   onReturnToParent,
-  onEndSession
+  onEndSession,
+  showDebugTelemetry
 }) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -113,6 +115,9 @@ export const KidMode: FC<KidModeProps> = ({
   const { actualStartAt, actualEndAt } = session;
   const lastNudge = nudgeEvents.length > 0 ? nudgeEvents[nudgeEvents.length - 1] : null;
   const formattedPaceDelta = telemetry ? telemetry.paceDelta.toFixed(2) : '0.00';
+  const currentTelemetry = telemetry?.currentTask ?? null;
+  const nextDebugTask = telemetry?.nextTask ?? null;
+  const sessionEndsAt = telemetry ? new Date(telemetry.sessionEndsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
 
   useEffect(() => {
     const computeElapsed = () => {
@@ -174,34 +179,53 @@ export const KidMode: FC<KidModeProps> = ({
           <p className="mt-2 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-100">{voiceError}</p>
         ) : null}
       </div>
-      <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-slate-950/70 p-4 text-sm text-emerald-100">
-        <p className="font-semibold">
-          Urgency: L{telemetry ? telemetry.urgencyLevel : '–'} ·{' '}
-          {telemetry ? `${telemetry.timeRemainingMinutes}m left` : 'calculating…'}
-        </p>
-        <p className="mt-1 text-xs text-emerald-200/80">Pace Δ {formattedPaceDelta}</p>
-        <div className="mt-3 space-y-1 text-xs text-emerald-200/70">
-          {nudgeEvents.length === 0 ? (
-            <p>No nudges fired yet.</p>
-          ) : (
-            <>
-              <p className="font-semibold text-emerald-200">Mid-task nudges</p>
-              <ul className="space-y-1">
-                {nudgeEvents.map((event) => (
-                  <li key={`${event.sessionTaskId}-${event.threshold}`}>
-                    {nudgeThresholdLabel[event.threshold]} · {formatNudgeTime(event.firedAt)}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {lastNudge ? (
-            <p className="pt-1 text-emerald-300">
-              Last: {nudgeThresholdLabel[lastNudge.threshold]} at {formatNudgeTime(lastNudge.firedAt)}
-            </p>
+      {showDebugTelemetry ? (
+        <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-slate-950/70 p-4 text-sm text-emerald-100">
+          <p className="font-semibold">
+            Urgency: L{telemetry ? telemetry.urgencyLevel : '–'} ·{' '}
+            {telemetry ? `${telemetry.timeRemainingMinutes}m left` : 'calculating…'} (ends {sessionEndsAt})
+          </p>
+          <p className="mt-1 text-xs text-emerald-200/80">Pace Δ {formattedPaceDelta}</p>
+          {currentTelemetry ? (
+            <div className="mt-3 space-y-1 text-xs text-emerald-200/70">
+              <p>
+                Current task remaining: {Math.ceil(currentTelemetry.remainingSeconds / 60)}m ·{' '}
+                {formatSeconds(currentTelemetry.remainingSeconds)}
+              </p>
+              <p>
+                Nudges fired: {currentTelemetry.nudgesFiredCount}/{currentTelemetry.totalScheduledNudges} · Next:{' '}
+                {currentTelemetry.nextNudgeThreshold ? nudgeThresholdLabel[currentTelemetry.nextNudgeThreshold] : 'none'}
+              </p>
+              {nextDebugTask ? (
+                <p>
+                  Next task hint: {nextDebugTask.hint ? nextDebugTask.hint : nextDebugTask.title}
+                </p>
+              ) : null}
+            </div>
           ) : null}
+          <div className="mt-3 space-y-1 text-xs text-emerald-200/70">
+            {nudgeEvents.length === 0 ? (
+              <p>No nudges fired yet.</p>
+            ) : (
+              <>
+                <p className="font-semibold text-emerald-200">Mid-task nudges</p>
+                <ul className="space-y-1">
+                  {nudgeEvents.map((event) => (
+                    <li key={`${event.sessionTaskId}-${event.threshold}`}>
+                      {nudgeThresholdLabel[event.threshold]} · {formatNudgeTime(event.firedAt)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {lastNudge ? (
+              <p className="pt-1 text-emerald-300">
+                Last: {nudgeThresholdLabel[lastNudge.threshold]} at {formatNudgeTime(lastNudge.firedAt)}
+              </p>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="h-4 flex-1 rounded-full bg-slate-800">
           <div

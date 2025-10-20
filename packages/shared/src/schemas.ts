@@ -140,11 +140,52 @@ export const sessionNudgeEventSchema = z.object({
   firedAt: z.string().datetime()
 });
 
+export const sessionActiveTaskTelemetrySchema = z.object({
+  sessionTaskId: z.string().cuid(),
+  title: z.string(),
+  expectedMinutes: z.number().nonnegative(),
+  hint: z.string().optional(),
+  startedAt: z.string().datetime(),
+  elapsedSeconds: z.number().int().nonnegative(),
+  remainingSeconds: z.number().int().nonnegative(),
+  nudgesFiredCount: z.number().int().min(0),
+  totalScheduledNudges: z.number().int().min(0),
+  nextNudgeThreshold: z.enum(['first', 'second', 'final']).nullable(),
+  lastNudgeFiredAt: z.string().datetime().nullable()
+});
+
+export const sessionNextTaskTelemetrySchema = z.object({
+  title: z.string(),
+  hint: z.string().optional()
+});
+
 export const sessionTelemetrySchema = z.object({
   urgencyLevel: z.number().int().min(0).max(3),
-  timeRemainingMinutes: z.number().nonnegative(),
+  timeRemainingMinutes: z.number().int().nonnegative(),
   paceDelta: z.number(),
-  nudges: z.array(sessionNudgeEventSchema)
+  sessionEndsAt: z.string().datetime(),
+  nudges: z.array(sessionNudgeEventSchema),
+  currentTask: sessionActiveTaskTelemetrySchema.nullable().optional(),
+  nextTask: sessionNextTaskTelemetrySchema.nullable().optional()
+});
+
+export const sessionMessageRequestSchema = z.object({
+  type: z.enum(['completion', 'nudge']),
+  sessionTaskId: z.string().cuid(),
+  language: z
+    .string()
+    .trim()
+    .min(2, 'language code is required')
+    .max(10, 'language code must be 10 characters or fewer'),
+  nudgeThreshold: z.enum(['first', 'second', 'final']).optional()
+});
+
+export const llmResponseSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(1, 'text is required')
+    .max(240, 'text must be 240 characters or fewer')
 });
 
 export const sessionTaskCompleteSchema = z
@@ -208,5 +249,8 @@ export type SessionTask = z.infer<typeof sessionTaskSchema>;
 export type SessionStartInput = z.infer<typeof sessionStartSchema>;
 export type SessionTaskCompleteInput = z.infer<typeof sessionTaskCompleteSchema>;
 export type SessionTelemetry = z.infer<typeof sessionTelemetrySchema>;
+export type SessionActiveTaskTelemetry = z.infer<typeof sessionActiveTaskTelemetrySchema>;
+export type SessionNextTaskTelemetry = z.infer<typeof sessionNextTaskTelemetrySchema>;
+export type SessionMessageRequest = z.infer<typeof sessionMessageRequestSchema>;
 export type SessionNudgeEvent = z.infer<typeof sessionNudgeEventSchema>;
 export type TtsRequestInput = z.infer<typeof ttsRequestSchema>;

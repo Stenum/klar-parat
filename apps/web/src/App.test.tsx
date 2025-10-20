@@ -320,6 +320,7 @@ describe('App', () => {
   });
 
   it('starts a session and enters kid mode', async () => {
+    window.history.pushState({}, '', '/?debug=1');
     render(<App />);
 
     await waitFor(() => expect(window.fetch).toHaveBeenCalled());
@@ -362,6 +363,7 @@ describe('App', () => {
   });
 
   it('completes tasks and shows the medal summary', async () => {
+    window.history.pushState({}, '', '/?debug=1');
     render(<App />);
 
     await waitFor(() => expect(window.fetch).toHaveBeenCalled());

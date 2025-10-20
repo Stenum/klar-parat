@@ -196,13 +196,17 @@
 
 # Iteration 6 — Real LLM (OpenAI) + Prompt Contract
 
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-25)
+  - PR TBD — Integrated OpenAI encouragement endpoint, expanded telemetry context, and debug-only urgency banner; verified with `npm run lint`, `npm run typecheck`, `npm run test`.
+
 **Goal:** Replace fake LLM with OpenAI while keeping strict output guarantees.
 
 **Server**
 
 * System prompt defines: tone policy, age/urgency styles, max 120 chars, no shaming/comparisons.
 * JSON-only response contract: `{ "text": "..." }`. Validate and truncate if needed.
-* Inputs: `child_first_name`, `age_years`, `completed_task_title`, `next_task_title`, `next_task_hint`, `urgency_level`, `time_remaining_mm`, `language`.
+* Inputs include: child first name, approximate age, language, session urgency level, minutes remaining in the session, elapsed/remaining seconds for the current task, task hint/title, next task preview, and nudge cadence details (three per-task checkpoints with fired count + upcoming threshold).
+* New endpoint `POST /api/sessions/:id/message` returns `{ "text": "..." }` while handling retries, truncation, and deterministic fallback phrases when OpenAI fails.
 * Retries with jitter (x2); on consecutive failure → return minimal hardcoded **server-side** sentence *then immediately reattempt on next event* (still spoken via TTS).
   *(No text fallback is displayed, honoring the “always TTS” rule.)*
 

@@ -182,6 +182,8 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * Development stub: `/api/tts` returns a deterministic sine-wave clip when `useFakeTTS=true` so playback can be verified without
   calling a provider.
 * Safety filter: no personal data sent in prompts beyond first name (configurable).
+* Server prompt payload includes: child first name, approximate age, chosen language, current task title & hint, next task preview, session urgency level, minutes remaining in session, elapsed/remaining seconds for the current task, and nudge cadence (three mid-task checkpoints with fired count and next threshold). The model is reminded of the “3 nudges per task” strategy so messaging references the correct tone.
+* Server returns JSON `{ "text": "..." }` (≤120 chars); if OpenAI fails after retries it responds with a deterministic celebratory/nudge phrase so TTS still plays.
 
 **Acceptance Criteria**
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   childCreateSchema,
   medalSchema,
+  sessionMessageRequestSchema,
   sessionStartSchema,
   sessionTaskCompleteSchema,
   sessionTelemetrySchema,
@@ -139,16 +140,35 @@ describe('sessionTelemetrySchema', () => {
       urgencyLevel: 2,
       timeRemainingMinutes: 12,
       paceDelta: 0.25,
+      sessionEndsAt: '2025-01-01T08:00:00.000Z',
       nudges: [
         {
           sessionTaskId: 'cktask12345678901234567890',
           threshold: 'second',
           firedAt: '2025-01-01T07:10:00.000Z'
         }
-      ]
+      ],
+      currentTask: {
+        sessionTaskId: 'cktask12345678901234567890',
+        title: 'Brush Teeth',
+        expectedMinutes: 3,
+        hint: 'Scrub top and bottom!',
+        startedAt: '2025-01-01T07:05:00.000Z',
+        elapsedSeconds: 75,
+        remainingSeconds: 105,
+        nudgesFiredCount: 1,
+        totalScheduledNudges: 3,
+        nextNudgeThreshold: 'final',
+        lastNudgeFiredAt: '2025-01-01T07:06:00.000Z'
+      },
+      nextTask: {
+        title: 'Get dressed',
+        hint: 'Clothes are on the chair'
+      }
     });
 
     expect(telemetry.nudges).toHaveLength(1);
+    expect(telemetry.currentTask?.nudgesFiredCount).toBe(1);
 
     expect(() =>
       sessionTelemetrySchema.parse({
@@ -156,6 +176,23 @@ describe('sessionTelemetrySchema', () => {
         timeRemainingMinutes: -1,
         paceDelta: 'slow'
       })
+    ).toThrow();
+  });
+});
+
+describe('sessionMessageRequestSchema', () => {
+  it('requires event type, task id, and language', () => {
+    const parsed = sessionMessageRequestSchema.parse({
+      type: 'nudge',
+      sessionTaskId: 'cktask12345678901234567890',
+      nudgeThreshold: 'second',
+      language: 'en-US'
+    });
+
+    expect(parsed.type).toBe('nudge');
+
+    expect(() =>
+      sessionMessageRequestSchema.parse({ type: 'completion', sessionTaskId: 'bad', language: '' })
     ).toThrow();
   });
 });
