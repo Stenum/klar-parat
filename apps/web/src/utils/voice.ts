@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 const SILENT_WAV =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAB9AAACABAAZGF0YQAAAAA=';
+  "data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==";
+
 
 type VoicePlayer = {
   enabled: boolean;
