@@ -202,7 +202,7 @@
 
 * System prompt defines: tone policy, age/urgency styles, max 120 chars, no shaming/comparisons.
 * JSON-only response contract: `{ "text": "..." }`. Validate and truncate if needed.
-* Inputs: `child_first_name`, `age_years`, `completed_task_title`, `next_task_title`, `urgency_level`, `time_remaining_mm`, `language`.
+* Inputs: `child_first_name`, `age_years`, `completed_task_title`, `next_task_title`, `next_task_hint`, `urgency_level`, `time_remaining_mm`, `language`.
 * Retries with jitter (x2); on consecutive failure → return minimal hardcoded **server-side** sentence *then immediately reattempt on next event* (still spoken via TTS).
   *(No text fallback is displayed, honoring the “always TTS” rule.)*
 
