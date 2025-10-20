@@ -134,6 +134,19 @@ export const sessionSchema = z.object({
   tasks: z.array(sessionTaskSchema)
 });
 
+export const sessionNudgeEventSchema = z.object({
+  sessionTaskId: z.string().cuid(),
+  threshold: z.enum(['first', 'second', 'final']),
+  firedAt: z.string().datetime()
+});
+
+export const sessionTelemetrySchema = z.object({
+  urgencyLevel: z.number().int().min(0).max(3),
+  timeRemainingMinutes: z.number().nonnegative(),
+  paceDelta: z.number(),
+  nudges: z.array(sessionNudgeEventSchema)
+});
+
 export const sessionTaskCompleteSchema = z
   .object({
     skipped: z.boolean().optional().default(false)
@@ -176,3 +189,5 @@ export type Session = z.infer<typeof sessionSchema>;
 export type SessionTask = z.infer<typeof sessionTaskSchema>;
 export type SessionStartInput = z.infer<typeof sessionStartSchema>;
 export type SessionTaskCompleteInput = z.infer<typeof sessionTaskCompleteSchema>;
+export type SessionTelemetry = z.infer<typeof sessionTelemetrySchema>;
+export type SessionNudgeEvent = z.infer<typeof sessionNudgeEventSchema>;

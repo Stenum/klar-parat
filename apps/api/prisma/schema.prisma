@@ -74,6 +74,10 @@ model SessionTask {
   expectedMinutes Float    @default(1.0) @map("expected_minutes")
   completedAt     DateTime? @map("completed_at")
   skipped         Boolean  @default(false)
+  startedAt       DateTime? @map("started_at")
+  nudgeFirstFiredAt  DateTime? @map("nudge_first_fired_at")
+  nudgeSecondFiredAt DateTime? @map("nudge_second_fired_at")
+  nudgeFinalFiredAt  DateTime? @map("nudge_final_fired_at")
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 

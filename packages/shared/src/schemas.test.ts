@@ -5,6 +5,7 @@ import {
   medalSchema,
   sessionStartSchema,
   sessionTaskCompleteSchema,
+  sessionTelemetrySchema,
   templateCreateSchema,
   templateUpdateSchema,
   timeStringSchema
@@ -126,6 +127,33 @@ describe('sessionStartSchema', () => {
         templateId: 'cktmpl12345678901234567890',
         plannedStartAt: '2025-01-01T09:00:00.000Z',
         plannedEndAt: '2025-01-01T08:00:00.000Z'
+      })
+    ).toThrow();
+  });
+});
+
+describe('sessionTelemetrySchema', () => {
+  it('validates telemetry payloads', () => {
+    const telemetry = sessionTelemetrySchema.parse({
+      urgencyLevel: 2,
+      timeRemainingMinutes: 12,
+      paceDelta: 0.25,
+      nudges: [
+        {
+          sessionTaskId: 'cktask12345678901234567890',
+          threshold: 'second',
+          firedAt: '2025-01-01T07:10:00.000Z'
+        }
+      ]
+    });
+
+    expect(telemetry.nudges).toHaveLength(1);
+
+    expect(() =>
+      sessionTelemetrySchema.parse({
+        urgencyLevel: 5,
+        timeRemainingMinutes: -1,
+        paceDelta: 'slow'
       })
     ).toThrow();
   });

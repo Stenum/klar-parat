@@ -132,6 +132,9 @@
 
 # Iteration 4 — Urgency Model (LLM/TTS still fake)
 
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-23)
+  - PR TBD — Added urgency telemetry endpoint, nudge scheduling, and Kid Mode dev banner; verified with `npm run lint`, `npm run typecheck`, and `npm run test`.
+
 **Goal:** Compute urgency levels and schedule three mid-task encouragements per task; surface them in the UI (text labels for you to see), but still call **fake** LLM/TTS.
 
 **Urgency Computation (server)**
@@ -148,7 +151,7 @@
 
 **API**
 
-* `GET /api/sessions/:id/telemetry` → `{ urgency_level, time_remaining_mm, pace_delta }`
+* `GET /api/sessions/:id/telemetry` → `{ urgencyLevel, timeRemainingMinutes, paceDelta, nudges[] }`
 
 **Web**
 

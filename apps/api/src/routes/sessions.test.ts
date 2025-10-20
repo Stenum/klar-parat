@@ -160,4 +160,60 @@ describe.sequential('sessions routes', () => {
 
     vi.useRealTimers();
   });
+
+  it('returns telemetry data and triggers nudges once per threshold', async () => {
+    vi.useFakeTimers();
+    const startTime = new Date('2025-01-01T07:00:00.000Z');
+    vi.setSystemTime(startTime);
+
+    const child = await prisma.child.create({
+      data: {
+        firstName: 'Nudgee',
+        birthdate: new Date('2016-05-01'),
+        active: true
+      }
+    });
+
+    const template = await prisma.template.create({
+      data: {
+        name: 'Quick Task',
+        defaultStartTime: '07:00',
+        defaultEndTime: '08:00',
+        tasks: {
+          create: [{ title: 'Focus Task', expectedMinutes: 3, orderIndex: 0 }]
+        }
+      }
+    });
+
+    const startResponse = await request(app).post('/api/sessions/start').send({
+      childId: child.id,
+      templateId: template.id
+    });
+
+    const sessionId = startResponse.body.session.id as string;
+
+    const initialTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
+    expect(initialTelemetry.status).toBe(200);
+    expect(initialTelemetry.body.telemetry.nudges).toHaveLength(0);
+
+    vi.setSystemTime(new Date(startTime.getTime() + 60 * 1000));
+    const firstNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
+    expect(firstNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
+    expect(firstNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('first');
+
+    const noDuplicate = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
+    expect(noDuplicate.body.telemetry.nudges).toHaveLength(0);
+
+    vi.setSystemTime(new Date(startTime.getTime() + 2 * 60 * 1000));
+    const secondNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
+    expect(secondNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
+    expect(secondNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('second');
+
+    vi.setSystemTime(new Date(startTime.getTime() + 3 * 60 * 1000));
+    const finalNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
+    expect(finalNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
+    expect(finalNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('final');
+
+    vi.useRealTimers();
+  });
 });
