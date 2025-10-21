@@ -196,8 +196,9 @@
 
 # Iteration 6 — Real LLM (OpenAI) + Prompt Contract
 
-**Status:** 🟨 In Progress (gpt-5-codex – 2025-10-26 follow-up)
-  - PR TBD — Refining OpenAI prompting, timer behaviour, and kick-off messaging; re-validating with `npm run lint`, `npm run typecheck`, `npm run test`.
+**Status:** 🟩 Complete ([fix(I6): resolve lint errors in encouragement route](https://github.com/acme/klar-parat/pull/999) – 2025-10-26)
+  - What changed: Delivered OpenAI-backed encouragement messaging with richer timing context, session kick-off announcements, and updated Kid Mode debug views to surface the new telemetry.
+  - How verified: `npm run lint`, `npm run typecheck`, `npm run test`.
 
 **Goal:** Replace fake LLM with OpenAI while keeping strict output guarantees.
 
