@@ -234,6 +234,7 @@
 
 * Replace Kid Mode with a board layout that shows one column per active child (current task, progress bar, big Complete/Skip buttons).
 * The Today (Parent) view launches and resumes sessions into the shared board without navigation changes; allow quick focus highlighting per column.
+* Provide a pre-launch planner so the parent can stage multiple child/template pairs before starting the board.
 * Surface live medal and urgency status per child column so progress is visible at a glance.
 
 **Server**

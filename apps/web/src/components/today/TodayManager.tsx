@@ -19,11 +19,19 @@ type BoardSessionState = {
   error: string | null;
 };
 
+type PlannedEntry = {
+  id: string;
+  child: Child;
+  template: Template;
+  allowSkip: boolean;
+};
+
 type TodayManagerProps = {
   sessions: BoardSessionState[];
   focusedSessionId: string | null;
   onFocusSession: (sessionId: string | null) => void;
   onSessionStarted: (session: Session, child: Child) => void;
+  onSessionsBatchStarted: (entries: Array<{ session: Session; child: Child }>) => void;
   onCompleteTask: (sessionId: string, index: number) => void;
   onSkipTask: (sessionId: string, index: number) => void;
   onEnableVoice: () => Promise<void>;
@@ -38,6 +46,7 @@ export const TodayManager: FC<TodayManagerProps> = ({
   focusedSessionId,
   onFocusSession,
   onSessionStarted,
+  onSessionsBatchStarted,
   onCompleteTask,
   onSkipTask,
   onEnableVoice,
@@ -54,6 +63,7 @@ export const TodayManager: FC<TodayManagerProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [allowSkip, setAllowSkip] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [plannedEntries, setPlannedEntries] = useState<PlannedEntry[]>([]);
 
   const fetchTodayData = useCallback(async () => {
     try {
@@ -85,9 +95,9 @@ export const TodayManager: FC<TodayManagerProps> = ({
     void fetchTodayData();
   }, [fetchTodayData]);
 
-  const handleStartSession = useCallback(async () => {
+  const handleAddToPlan = useCallback(() => {
     if (!selectedChildId || !selectedTemplateId) {
-      setError('Pick a child and template to start.');
+      setError('Pick a child and template, then add them to the plan.');
       return;
     }
 
@@ -97,33 +107,84 @@ export const TodayManager: FC<TodayManagerProps> = ({
       return;
     }
 
-    try {
-      setStarting(true);
-      const response = await fetch('/api/sessions/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          childId: selectedChildId,
-          templateId: selectedTemplateId,
-          allowSkip
-        })
-      });
+    const template = templates.find((item) => item.id === selectedTemplateId);
+    if (!template) {
+      setError('Selected template could not be found.');
+      return;
+    }
 
-      if (!response.ok) {
-        const body = await response.json();
-        throw new Error(body.error?.message ?? 'Unable to start session');
+    if (sessions.some((entry) => entry.child.id === child.id)) {
+      setError(`${child.firstName} is already on the board.`);
+      return;
+    }
+
+    if (plannedEntries.some((entry) => entry.child.id === child.id)) {
+      setError(`${child.firstName} is already planned.`);
+      return;
+    }
+
+    const entry: PlannedEntry = {
+      id: `${child.id}-${template.id}`,
+      child,
+      template,
+      allowSkip
+    };
+
+    setPlannedEntries((prev) => [...prev, entry]);
+    setSelectedChildId('');
+    setSelectedTemplateId('');
+    setAllowSkip(false);
+    setError(null);
+  }, [allowSkip, children, plannedEntries, selectedChildId, selectedTemplateId, sessions, templates]);
+
+  const handleRemovePlannedEntry = useCallback((id: string) => {
+    setPlannedEntries((prev) => prev.filter((entry) => entry.id !== id));
+  }, []);
+
+  const handleStartPlannedSessions = useCallback(async () => {
+    if (plannedEntries.length === 0) {
+      setError('Add at least one child to the plan.');
+      return;
+    }
+
+    setStarting(true);
+    setError(null);
+
+    const startedEntries: Array<{ session: Session; child: Child }> = [];
+
+    try {
+      for (const entry of plannedEntries) {
+        const response = await fetch('/api/sessions/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            childId: entry.child.id,
+            templateId: entry.template.id,
+            allowSkip: entry.allowSkip
+          })
+        });
+
+        if (!response.ok) {
+          const body = await response.json();
+          throw new Error(body.error?.message ?? `Unable to start ${entry.child.firstName}'s session.`);
+        }
+
+        const data = (await response.json()) as { session: Session };
+        onSessionStarted(data.session, entry.child);
+        startedEntries.push({ session: data.session, child: entry.child });
       }
 
-      const data = (await response.json()) as { session: Session };
-      onSessionStarted(data.session, child);
-      setSelectedTemplateId('');
+      if (startedEntries.length > 0) {
+        onSessionsBatchStarted(startedEntries);
+      }
+      setPlannedEntries([]);
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : 'Unable to start session.');
+      setError(err instanceof Error ? err.message : 'Unable to start planned sessions.');
     } finally {
       setStarting(false);
     }
-  }, [allowSkip, children, onSessionStarted, selectedChildId, selectedTemplateId]);
+  }, [onSessionStarted, onSessionsBatchStarted, plannedEntries]);
 
   const activeNames = useMemo(
     () => sessions.map((entry) => entry.child.firstName).join(', '),
@@ -179,8 +240,13 @@ export const TodayManager: FC<TodayManagerProps> = ({
         {error && <p className="mb-4 rounded-lg bg-rose-500/20 p-3 text-rose-200">{error}</p>}
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="flex flex-col gap-4 rounded-xl bg-slate-950/40 p-5">
-            <h3 className="text-xl font-semibold">Who is playing today?</h3>
+          <div className="flex flex-col gap-5 rounded-xl bg-slate-950/40 p-5">
+            <div>
+              <h3 className="text-xl font-semibold">Step 1 · Build the plan</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Pick every kid and their routine before you kick things off. You can reuse the same template for multiple kids.
+              </p>
+            </div>
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-200">Child</span>
               <select
@@ -222,19 +288,59 @@ export const TodayManager: FC<TodayManagerProps> = ({
             </label>
             <button
               type="button"
-              onClick={handleStartSession}
+              onClick={handleAddToPlan}
               disabled={starting || !children.length || !templates.length}
               className="rounded-lg bg-emerald-500 px-4 py-3 text-lg font-semibold text-slate-900 shadow transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-500/40"
             >
-              {starting ? 'Starting…' : 'Start Session'}
+              Add to plan
             </button>
-            {(!children.length || !templates.length) && (
-              <p className="text-sm text-slate-400">Add at least one child and template first to enable the board.</p>
+            {plannedEntries.length > 0 ? (
+              <ul className="space-y-3">
+                {plannedEntries.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-slate-200"
+                  >
+                    <div>
+                      <p className="text-base font-semibold text-slate-100">{entry.child.firstName}</p>
+                      <p className="text-xs text-slate-400">{entry.template.name}</p>
+                      {entry.allowSkip ? (
+                        <p className="mt-1 text-xs text-emerald-300">Skip allowed</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-500">Skip disabled</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePlannedEntry(entry.id)}
+                      className="rounded-lg border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-rose-400 hover:text-rose-200"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+                Your plan is empty. Add each kid you want on the board before starting.
+              </p>
             )}
           </div>
-          <div className="space-y-3 rounded-xl border border-dashed border-slate-700 bg-slate-950/20 p-5 text-sm text-slate-300">
-            <p className="text-base font-semibold text-slate-100">What happens next?</p>
-            <p>The board shows every kid at once with independent timers, urgency, and voice.</p>
+          <div className="space-y-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/20 p-5 text-sm text-slate-300">
+            <div>
+              <h3 className="text-base font-semibold text-slate-100">Step 2 · Launch the board</h3>
+              <p className="mt-1 text-slate-400">
+                When you hit start, the board switches to the kid-facing view and introduces everyone together.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleStartPlannedSessions}
+              disabled={starting || plannedEntries.length === 0}
+              className="w-full rounded-lg bg-emerald-400 px-4 py-3 text-lg font-semibold text-slate-900 shadow transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/40"
+            >
+              {starting ? 'Starting…' : `Start ${plannedEntries.length || ''} ${plannedEntries.length === 1 ? 'session' : 'sessions'}`.trim()}
+            </button>
             <p>Progress sticks even if you refresh—the board keeps medals and timing live.</p>
             <p>Tap a child chip above the board to highlight their column during the morning rush.</p>
           </div>

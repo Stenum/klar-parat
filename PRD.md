@@ -362,11 +362,12 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 
 ### 8.2 Kid runs Today Session
 
-1. Open app → “Start Today” (or auto when first task completed).
-2. Kid Mode board shows one column per active child with current task card (emoji + hint) and a big “Mark Done” button.
+1. Parent opens **Today** on the parent view, stages every participating child by pairing them with a routine template, then taps **Start** once the plan looks right.
+2. The board switches to the kid-facing layout and plays a single kickoff message that greets all staged kids together and reminds each of their first task before nudges take over.
+3. Kid Mode board shows one column per active child with current task card (emoji + hint) and a big “Mark Done” button.
    * Optional “Skip” button shows only if the parent allowed skips when starting the session.
-3. On tap: message is generated → TTS plays → that child’s column advances while others continue uninterrupted.
-4. Final task: “You finished!” + medal animation + total time vs. expected.
+4. On tap: message is generated → TTS plays → that child’s column advances while others continue uninterrupted.
+5. Final task: “You finished!” + medal animation + total time vs. expected.
 
 **Edge cases:**
 

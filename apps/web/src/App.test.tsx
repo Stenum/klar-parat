@@ -20,6 +20,7 @@ describe('App (multi-child board)', () => {
   let children: Child[];
   let templates: Template[];
   let sessionCounter: number;
+  let fetchMock: vi.SpiedFunction<typeof window.fetch>;
 
   beforeEach(() => {
     activeSessions = [];
@@ -109,12 +110,14 @@ describe('App (multi-child board)', () => {
       return session;
     };
 
-    vi.spyOn(window, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      const method = (init?.method ?? 'GET').toUpperCase();
+    fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = (init?.method ?? 'GET').toUpperCase();
 
-      if (url.endsWith('/api/sessions/active') && method === 'GET') {
-        return jsonResponse({ sessions: activeSessions });
+        if (url.endsWith('/api/sessions/active') && method === 'GET') {
+          return jsonResponse({ sessions: activeSessions });
       }
 
       if (url.endsWith('/api/children') && method === 'GET') {
@@ -230,7 +233,9 @@ describe('App (multi-child board)', () => {
       }
 
       return jsonResponse({ error: { message: `Unhandled fetch ${url}` } }, 500);
-    });
+      });
+
+    vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockImplementation(async () => undefined);
   });
 
   afterEach(() => {
@@ -259,5 +264,57 @@ describe('App (multi-child board)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Templates' }));
     expect(await screen.findByRole('heading', { name: /templates/i })).toBeInTheDocument();
+  });
+
+  it('lets the parent stage multiple kids and introduces them together first', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const todayNav = await screen.findByRole('button', { name: 'Today' });
+    await user.click(todayNav);
+
+    await waitFor(() => expect(screen.getByLabelText('Child')).toBeInTheDocument());
+
+    await user.selectOptions(screen.getByLabelText('Child'), 'child-1');
+    await user.selectOptions(screen.getByLabelText('Routine template'), 'template-1');
+    await user.click(screen.getByRole('button', { name: 'Add to plan' }));
+
+    await user.selectOptions(screen.getByLabelText('Child'), 'child-2');
+    await user.selectOptions(screen.getByLabelText('Routine template'), 'template-1');
+    await user.click(screen.getByRole('button', { name: 'Add to plan' }));
+
+    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(2);
+
+    const startButton = screen.getByRole('button', { name: 'Start 2 sessions' });
+    await user.click(startButton);
+
+    expect(await screen.findByRole('heading', { name: 'Ada' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ben' })).toBeInTheDocument();
+
+    const enableVoice = await screen.findByRole('button', { name: /enable voice/i });
+    await user.click(enableVoice);
+
+    await waitFor(() => {
+      const introCall = fetchMock.mock.calls.find(([input, init]) => {
+        if (typeof input !== 'string' || !input.endsWith('/api/tts') || !init?.body) {
+          return false;
+        }
+        try {
+          const payload = JSON.parse(init.body as string) as { text?: string };
+          return payload.text?.includes('Hej Ada and Ben') ?? false;
+        } catch {
+          return false;
+        }
+      });
+      expect(introCall).toBeDefined();
+    });
+
+    const startMessageCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      if (typeof input !== 'string' || !/\/api\/sessions\/[^/]+\/message$/.test(input)) {
+        return false;
+      }
+      return (init?.method ?? 'GET').toUpperCase() === 'POST' && Boolean(init?.body);
+    });
+    expect(startMessageCalls).toHaveLength(0);
   });
 });

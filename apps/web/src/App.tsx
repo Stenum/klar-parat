@@ -107,8 +107,6 @@ const App = () => {
   const voiceProcessingRef = useRef(false);
   const processedNudgeKeysRef = useRef<Map<string, Set<string>>>(new Map());
   const boardIntroDeliveredRef = useRef(false);
-  const boardIntroEntriesRef = useRef<Array<{ session: Session; child: Child }>>([]);
-  const boardIntroTimeoutRef = useRef<number | null>(null);
   const {
     enabled: voiceEnabled,
     enabling: voiceEnabling,
@@ -133,13 +131,6 @@ const App = () => {
       processedNudgeKeysRef.current.set(sessionId, set);
     }
     return set;
-  }, []);
-
-  const clearBoardIntroductionTimer = useCallback(() => {
-    if (boardIntroTimeoutRef.current !== null) {
-      window.clearTimeout(boardIntroTimeoutRef.current);
-      boardIntroTimeoutRef.current = null;
-    }
   }, []);
 
   const requestSpeechAudio = useCallback(
@@ -259,20 +250,6 @@ const App = () => {
     [processVoiceQueue, voiceEnabled]
   );
 
-  const triggerBoardIntroduction = useCallback(
-    (entries: Array<{ session: Session; child: Child }>) => {
-      if (entries.length === 0) {
-        return;
-      }
-      const text = buildBoardIntroduction(entries);
-      enqueueVoiceRequest({ type: 'custom', language: VOICE_LANGUAGE, text });
-      boardIntroDeliveredRef.current = true;
-      boardIntroEntriesRef.current = [];
-      clearBoardIntroductionTimer();
-    },
-    [clearBoardIntroductionTimer, enqueueVoiceRequest]
-  );
-
   const addSessionEntry = useCallback((session: Session, child: Child) => {
     setSessions((prev) => ({
       ...prev,
@@ -346,30 +323,19 @@ const App = () => {
       setVoiceError(null);
       processedNudgeKeysRef.current.set(session.id, new Set());
 
-      if (!boardIntroDeliveredRef.current) {
-        boardIntroEntriesRef.current = [...boardIntroEntriesRef.current, { session, child }];
-        if (boardIntroEntriesRef.current.length >= 2) {
-          triggerBoardIntroduction(boardIntroEntriesRef.current);
-        } else if (boardIntroTimeoutRef.current === null) {
-          boardIntroTimeoutRef.current = window.setTimeout(() => {
-            if (!boardIntroDeliveredRef.current && boardIntroEntriesRef.current.length > 0) {
-              triggerBoardIntroduction(boardIntroEntriesRef.current);
-            }
-          }, 1500);
+      if (boardIntroDeliveredRef.current) {
+        const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
+        if (firstTask) {
+          enqueueVoiceRequest({
+            type: 'session_start',
+            sessionId: session.id,
+            sessionTaskId: firstTask.id,
+            language: VOICE_LANGUAGE
+          });
         }
       }
-
-      const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
-      if (firstTask) {
-        enqueueVoiceRequest({
-          type: 'session_start',
-          sessionId: session.id,
-          sessionTaskId: firstTask.id,
-          language: VOICE_LANGUAGE
-        });
-      }
     },
-    [addSessionEntry, enqueueVoiceRequest, setVoiceError, triggerBoardIntroduction]
+    [addSessionEntry, enqueueVoiceRequest, setVoiceError]
   );
 
   const handleEnableVoice = useCallback(async () => {
@@ -413,8 +379,6 @@ const App = () => {
 
       processedNudgeKeysRef.current = processed;
       boardIntroDeliveredRef.current = data.sessions.length > 0;
-      boardIntroEntriesRef.current = [];
-      clearBoardIntroductionTimer();
       setSessions(nextState);
 
       setFocusedSessionId((current) => {
@@ -427,28 +391,35 @@ const App = () => {
     } catch (error) {
       console.error(error);
     }
-  }, [clearBoardIntroductionTimer]);
+  }, []);
 
   useEffect(() => {
     void fetchActiveSessions();
-    return () => {
-      clearBoardIntroductionTimer();
-    };
-  }, [clearBoardIntroductionTimer, fetchActiveSessions]);
+  }, [fetchActiveSessions]);
 
   useEffect(() => {
     if (sessionIds.length === 0) {
       setFocusedSessionId(null);
       boardIntroDeliveredRef.current = false;
-      boardIntroEntriesRef.current = [];
-      clearBoardIntroductionTimer();
       voiceQueueRef.current = [];
       voiceProcessingRef.current = false;
       processedNudgeKeysRef.current = new Map();
     } else if (focusedSessionId && !sessions[focusedSessionId]) {
       setFocusedSessionId(sessionIds[0] ?? null);
     }
-  }, [clearBoardIntroductionTimer, focusedSessionId, sessionIds, sessions]);
+  }, [focusedSessionId, sessionIds, sessions]);
+
+  const handleSessionsBatchStarted = useCallback(
+    (entries: Array<{ session: Session; child: Child }>) => {
+      if (boardIntroDeliveredRef.current || entries.length === 0) {
+        return;
+      }
+      const text = buildBoardIntroduction(entries);
+      enqueueVoiceRequest({ type: 'custom', language: VOICE_LANGUAGE, text });
+      boardIntroDeliveredRef.current = true;
+    },
+    [enqueueVoiceRequest]
+  );
 
   useEffect(() => {
     if (sessionIdsKey.length === 0) {
@@ -675,6 +646,7 @@ const App = () => {
               focusedSessionId={focusedSessionId}
               onFocusSession={setFocusedSessionId}
               onSessionStarted={handleSessionStarted}
+              onSessionsBatchStarted={handleSessionsBatchStarted}
               onCompleteTask={handleCompleteTask}
               onSkipTask={handleSkipTask}
               onEnableVoice={handleEnableVoice}
