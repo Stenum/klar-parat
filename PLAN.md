@@ -226,7 +226,7 @@
 
 # Iteration 7 — Multi-Child Same-Screen Board
 
-**Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent.
+**Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent. Voice feedback is enabled on the parent view before the sessiono is started.
 
 **Web**
 
@@ -242,7 +242,7 @@
 **Validation**
 
 * Start sessions for two children; confirm both columns advance correctly on the same screen and play their own TTS without crosstalk.
-* Pause one child while the other continues; urgency levels update independently.
+* The first message, when the session starts, introduces both kids to the session with the same TTS, and introduces their respective chores and their first task.
 
 **Tests**
 
