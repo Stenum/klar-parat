@@ -6,15 +6,37 @@ import { KidMode } from './components/kid-mode/KidMode';
 import { getInitialNavKey, type NavKey, SidebarNav } from './components/navigation/SidebarNav';
 import { TemplatesManager } from './components/templates/TemplatesManager';
 import { TodayManager } from './components/today/TodayManager';
-import type { SessionNudgeEvent, SessionProgressState, SessionTelemetry } from './types/session';
+import type {
+  SessionNudgeEvent,
+  SessionProgressState,
+  SessionTelemetry
+} from './types/session';
 import { deriveSessionProgress } from './utils/sessionProgress';
 import { useVoicePlayer } from './utils/voice';
 
-type VoiceRequest = {
-  type: 'completion' | 'nudge';
-  taskTitle: string;
-  childName: string;
-};
+type VoiceRequest =
+  | {
+      type: 'session_start';
+      sessionId: string;
+      sessionTaskId: string;
+      language: string;
+    }
+  | {
+      type: 'completion';
+      sessionId: string;
+      sessionTaskId: string;
+      language: string;
+    }
+  | {
+      type: 'nudge';
+      sessionId: string;
+      sessionTaskId: string;
+      nudgeThreshold: 'first' | 'second' | 'final';
+      language: string;
+    };
+
+const VOICE_LANGUAGE = 'en-US';
+const VOICE_ID = 'kiddo';
 
 const App = () => {
   const [activeNav, setActiveNav] = useState<NavKey>(getInitialNavKey());
@@ -26,6 +48,12 @@ const App = () => {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<SessionTelemetry | null>(null);
   const [nudgeEvents, setNudgeEvents] = useState<SessionNudgeEvent[]>([]);
+  const [debugMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return new URLSearchParams(window.location.search).get('debug') === '1';
+  });
   const voiceQueueRef = useRef<VoiceRequest[]>([]);
   const voiceProcessingRef = useRef(false);
   const processedNudgeKeysRef = useRef<Set<string>>(new Set());
@@ -57,23 +85,6 @@ const App = () => {
     setVoiceError(null);
   }, [applySessionUpdate, setVoiceError]);
 
-  const handleSessionStarted = useCallback(
-    (session: Session, child: Child) => {
-      applySessionUpdate(session);
-      setActiveChild(child);
-      setShowKidMode(true);
-      setSessionError(null);
-      setSessionActionPending(false);
-      setTelemetry(null);
-      setNudgeEvents([]);
-      voiceQueueRef.current = [];
-      voiceProcessingRef.current = false;
-      processedNudgeKeysRef.current = new Set();
-      setVoiceError(null);
-    },
-    [applySessionUpdate, setVoiceError]
-  );
-
   const handleEnterKidMode = useCallback(() => {
     setShowKidMode(true);
   }, []);
@@ -82,30 +93,25 @@ const App = () => {
     setShowKidMode(false);
   }, []);
 
-  const buildVoicePrompt = useCallback((request: VoiceRequest) => {
-    if (request.type === 'completion') {
-      return `Celebrate ${request.childName} for finishing "${request.taskTitle}". Keep it upbeat and under 15 words.`;
-    }
-
-    return `Encourage ${request.childName} to stay focused on "${request.taskTitle}" with a gentle, energetic nudge.`;
-  }, []);
-
   const requestSpeechAudio = useCallback(
     async (request: VoiceRequest) => {
-      const prompt = buildVoicePrompt(request);
-
-      const llmResponse = await fetch('/api/dev/fake-llm', {
+      const llmResponse = await fetch(`/api/sessions/${request.sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({
+          type: request.type,
+          sessionTaskId: request.sessionTaskId,
+          language: request.language,
+          nudgeThreshold: request.type === 'nudge' ? request.nudgeThreshold : undefined
+        })
       });
 
       const llmPayload = (await llmResponse.json()) as {
-        reply?: string;
+        text?: string;
         error?: { message?: string };
       };
 
-      if (!llmResponse.ok || !llmPayload.reply) {
+      if (!llmResponse.ok || !llmPayload.text) {
         throw new Error(llmPayload.error?.message ?? 'Unable to generate encouragement text.');
       }
 
@@ -113,9 +119,9 @@ const App = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: llmPayload.reply,
-          language: 'en-US',
-          voice: 'kiddo'
+          text: llmPayload.text,
+          language: request.language,
+          voice: VOICE_ID
         })
       });
 
@@ -130,7 +136,7 @@ const App = () => {
 
       return ttsPayload.audioUrl;
     },
-    [buildVoicePrompt]
+    []
   );
 
   const processVoiceQueue = useCallback(async () => {
@@ -181,6 +187,33 @@ const App = () => {
     [processVoiceQueue, voiceEnabled]
   );
 
+  const handleSessionStarted = useCallback(
+    (session: Session, child: Child) => {
+      applySessionUpdate(session);
+      setActiveChild(child);
+      setShowKidMode(true);
+      setSessionError(null);
+      setSessionActionPending(false);
+      setTelemetry(null);
+      setNudgeEvents([]);
+      voiceQueueRef.current = [];
+      voiceProcessingRef.current = false;
+      processedNudgeKeysRef.current = new Set();
+      setVoiceError(null);
+
+      const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
+      if (firstTask) {
+        enqueueVoiceRequest({
+          type: 'session_start',
+          sessionId: session.id,
+          sessionTaskId: firstTask.id,
+          language: VOICE_LANGUAGE
+        });
+      }
+    },
+    [applySessionUpdate, enqueueVoiceRequest, setVoiceError]
+  );
+
   const handleEnableVoice = useCallback(async () => {
     setVoiceError(null);
     const success = await enableVoice();
@@ -202,9 +235,6 @@ const App = () => {
 
     let cancelled = false;
     let interval: number | null = null;
-
-    const childName = activeChild?.firstName ?? 'buddy';
-    const tasksById = new Map(activeSession.tasks.map((task) => [task.id, task]));
 
     const fetchTelemetry = async () => {
       try {
@@ -229,11 +259,12 @@ const App = () => {
               additions.forEach((event) => {
                 const key = `${event.sessionTaskId}:${event.threshold}`;
                 processedNudgeKeysRef.current.add(key);
-                const task = tasksById.get(event.sessionTaskId);
                 enqueueVoiceRequest({
                   type: 'nudge',
-                  taskTitle: task?.title ?? 'your task',
-                  childName
+                  sessionId: activeSession.id,
+                  sessionTaskId: event.sessionTaskId,
+                  nudgeThreshold: event.threshold,
+                  language: VOICE_LANGUAGE
                 });
               });
               return [...current, ...additions];
@@ -256,7 +287,7 @@ const App = () => {
         window.clearInterval(interval);
       }
     };
-  }, [activeChild, activeSession, enqueueVoiceRequest, showKidMode]);
+  }, [activeSession, enqueueVoiceRequest, showKidMode]);
 
   const finishSession = useCallback(
     async (sessionId: string) => {
@@ -306,8 +337,9 @@ const App = () => {
         if (updatedTask && !updatedTask.skipped && updatedTask.completedAt) {
           enqueueVoiceRequest({
             type: 'completion',
-            taskTitle: updatedTask.title,
-            childName: activeChild?.firstName ?? 'buddy'
+            sessionId: data.session.id,
+            sessionTaskId: updatedTask.id,
+            language: VOICE_LANGUAGE
           });
         }
 
@@ -322,7 +354,7 @@ const App = () => {
         setSessionActionPending(false);
       }
     },
-    [activeChild, activeSession, applySessionUpdate, enqueueVoiceRequest, finishSession]
+    [activeSession, applySessionUpdate, enqueueVoiceRequest, finishSession]
   );
 
   const handleSkipTask = useCallback(
@@ -394,6 +426,7 @@ const App = () => {
                 onSkipTask={handleSkipTask}
                 onReturnToParent={handleReturnToParent}
                 onEndSession={resetSessionState}
+                showDebugTelemetry={debugMode}
               />
             ) : (
               <TodayManager

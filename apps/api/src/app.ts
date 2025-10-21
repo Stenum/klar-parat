@@ -3,6 +3,7 @@ import express from 'express';
 
 import { registerChildrenRoutes } from './routes/children.js';
 import { registerDevRoutes } from './routes/dev.js';
+import { registerEncouragementRoutes } from './routes/encouragement.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerTemplateRoutes } from './routes/templates.js';
 import { registerTtsRoutes } from './routes/tts.js';
@@ -21,6 +22,7 @@ export const createApp = () => {
   registerTemplateRoutes(app);
   registerSessionRoutes(app);
   registerTtsRoutes(app);
+  registerEncouragementRoutes(app);
   registerDevRoutes(app);
 
   return app;

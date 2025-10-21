@@ -54,6 +54,7 @@ describe.sequential('sessions routes', () => {
     expect(session.allowSkip).toBe(true);
     expect(session.tasks).toHaveLength(2);
     expect(session.tasks[0].title).toBe('Wake up');
+    expect(session.actualStartAt).toBeTruthy();
 
     const persisted = await request(app).get(`/api/sessions/${session.id}`);
     expect(persisted.status).toBe(200);
@@ -91,6 +92,7 @@ describe.sequential('sessions routes', () => {
     });
 
     const sessionId = startResponse.body.session.id as string;
+    expect(startResponse.body.session.actualStartAt).toBeTruthy();
 
     const completeFirst = await request(app)
       .post(`/api/sessions/${sessionId}/task/0/complete`)
@@ -145,7 +147,7 @@ describe.sequential('sessions routes', () => {
       .send({ skipped: true });
     expect(skipFirst.status).toBe(200);
     expect(skipFirst.body.session.tasks[0].skipped).toBe(true);
-    expect(skipFirst.body.session.actualStartAt).toBeNull();
+    expect(skipFirst.body.session.actualStartAt).toBeTruthy();
 
     const skipSecond = await request(app)
       .post(`/api/sessions/${sessionId}/task/1/complete`)
@@ -156,7 +158,9 @@ describe.sequential('sessions routes', () => {
     expect(finishResponse.status).toBe(200);
     expect(finishResponse.body.session.medal).toBe('gold');
     expect(finishResponse.body.session.actualStartAt).toBeTruthy();
-    expect(finishResponse.body.session.actualStartAt).toBe(finishResponse.body.session.actualEndAt);
+    expect(
+      new Date(finishResponse.body.session.actualEndAt!).getTime()
+    ).toBeGreaterThanOrEqual(new Date(finishResponse.body.session.actualStartAt!).getTime());
 
     vi.useRealTimers();
   });
@@ -195,11 +199,17 @@ describe.sequential('sessions routes', () => {
     const initialTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
     expect(initialTelemetry.status).toBe(200);
     expect(initialTelemetry.body.telemetry.nudges).toHaveLength(0);
+    expect(initialTelemetry.body.telemetry.sessionEndsAt).toMatch(/T/);
+    expect(initialTelemetry.body.telemetry.currentTask).toMatchObject({
+      nudgesFiredCount: 0,
+      totalScheduledNudges: 3
+    });
 
     vi.setSystemTime(new Date(startTime.getTime() + 60 * 1000));
     const firstNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
     expect(firstNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
     expect(firstNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('first');
+    expect(firstNudgeTelemetry.body.telemetry.currentTask?.nudgesFiredCount).toBe(1);
 
     const noDuplicate = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
     expect(noDuplicate.body.telemetry.nudges).toHaveLength(0);
@@ -208,11 +218,13 @@ describe.sequential('sessions routes', () => {
     const secondNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
     expect(secondNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
     expect(secondNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('second');
+    expect(secondNudgeTelemetry.body.telemetry.currentTask?.nudgesFiredCount).toBe(2);
 
     vi.setSystemTime(new Date(startTime.getTime() + 3 * 60 * 1000));
     const finalNudgeTelemetry = await request(app).get(`/api/sessions/${sessionId}/telemetry`);
     expect(finalNudgeTelemetry.body.telemetry.nudges).toHaveLength(1);
     expect(finalNudgeTelemetry.body.telemetry.nudges[0].threshold).toBe('final');
+    expect(finalNudgeTelemetry.body.telemetry.currentTask?.nudgesFiredCount).toBe(3);
 
     vi.useRealTimers();
   });

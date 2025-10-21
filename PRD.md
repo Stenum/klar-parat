@@ -137,7 +137,7 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 
 **Functional Requirements**
 
-* Session **start time**: when first task completes (default) or when parent presses “Start”.
+* Session **start time**: when the session begins (parent taps “Start”); the overall timer runs immediately.
 * Session **end time**: when final required task completes.
 * **Expected total** = sum of `expected_minutes` per task (tasks without value default to 1 minute, configurable global default).
 * Medal thresholds (editable global settings):
@@ -171,7 +171,7 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 
 **Functional Requirements**
 
-* For each completion event, app creates a **short encouragement** string.
+* For the session kick-off, each mid-task nudge, and every completion event, the app creates a **short encouragement** string.
 * Message sources (configurable order of precedence):
 
   1. **Template snippets** (parent-authored per task, optional).
@@ -182,12 +182,14 @@ Mornings are chaotic. Kids struggle to stay on task, and parents spend energy nu
 * Development stub: `/api/tts` returns a deterministic sine-wave clip when `useFakeTTS=true` so playback can be verified without
   calling a provider.
 * Safety filter: no personal data sent in prompts beyond first name (configurable).
+* Server prompt payload includes: child first name, approximate age, chosen language, session start/end timestamps, elapsed and remaining session minutes, current task title & hint, previous and next task previews, elapsed/remaining seconds for the current task, and nudge cadence (three mid-task checkpoints with fired count and next threshold). The model is reminded of the “3 nudges per task” strategy so messaging references the correct tone.
+* Server returns JSON `{ "text": "..." }` (model is instructed to keep it short but we do not hard-cap characters); if OpenAI fails after retries it responds with a deterministic celebratory/nudge phrase so TTS still plays.
 
 **Acceptance Criteria**
 
 * If OpenAI call fails or is blocked, fallback to parent-authored generic phrases.
 * TTS voice is consistent with chosen voice (best-effort per browser).
-* Messages are ≤ 120 characters (truncate gracefully if longer).
+* Messages stay concise (1–3 lively sentences) and continue to reflect urgency when timing is tight.
 
 ---
 

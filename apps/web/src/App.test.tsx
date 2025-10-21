@@ -130,13 +130,14 @@ describe('App', () => {
         const expectedTotal = template.tasks.reduce((sum, task) => sum + task.expectedMinutes, 0);
         const plannedStartAt = new Date().toISOString();
         const plannedEndAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const actualStartAt = new Date().toISOString();
         const session: Session = {
           id: `session-${++sessionCounter}`,
           childId: body.childId,
           allowSkip: body.allowSkip ?? false,
           plannedStartAt,
           plannedEndAt,
-          actualStartAt: null,
+          actualStartAt,
           actualEndAt: null,
           expectedTotalMinutes: expectedTotal,
           medal: null,
@@ -320,6 +321,7 @@ describe('App', () => {
   });
 
   it('starts a session and enters kid mode', async () => {
+    window.history.pushState({}, '', '/?debug=1');
     render(<App />);
 
     await waitFor(() => expect(window.fetch).toHaveBeenCalled());
@@ -362,6 +364,7 @@ describe('App', () => {
   });
 
   it('completes tasks and shows the medal summary', async () => {
+    window.history.pushState({}, '', '/?debug=1');
     render(<App />);
 
     await waitFor(() => expect(window.fetch).toHaveBeenCalled());

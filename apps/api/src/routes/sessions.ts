@@ -1,6 +1,7 @@
 import {
   computeMedal,
   computeUrgency,
+  type SessionActiveTaskTelemetry,
   sessionSchema,
   sessionStartSchema,
   sessionTaskCompleteSchema,
@@ -81,6 +82,7 @@ router.post('/start', async (req, res) => {
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      const sessionStart = new Date();
       const session = await tx.session.create({
         data: {
           childId: child.id,
@@ -88,11 +90,10 @@ router.post('/start', async (req, res) => {
           plannedStartAt: resolvedPlannedStart,
           plannedEndAt: resolvedPlannedEnd,
           expectedTotalMinutes: snapshot.expectedTotalMinutes,
-          allowSkip
+          allowSkip,
+          actualStartAt: sessionStart
         }
       });
-
-      const firstTaskActivation = new Date();
 
       await Promise.all(
         snapshot.tasks.map((task) =>
@@ -102,7 +103,7 @@ router.post('/start', async (req, res) => {
               title: task.title,
               expectedMinutes: task.expectedMinutes,
               orderIndex: task.orderIndex,
-              startedAt: task.orderIndex === 0 ? firstTaskActivation : null
+              startedAt: task.orderIndex === 0 ? sessionStart : null
             }
           })
         )
@@ -160,6 +161,8 @@ router.get('/:id/telemetry', async (req, res) => {
         return null;
       }
 
+      const snapshot = templateSnapshotSchema.parse(JSON.parse(session.templateSnapshot));
+      const snapshotByOrder = new Map(snapshot.tasks.map((task) => [task.orderIndex, task]));
       const completedExpectedMinutes = session.tasks
         .filter((task) => task.completedAt || task.skipped)
         .reduce((total, task) => total + task.expectedMinutes, 0);
@@ -174,12 +177,20 @@ router.get('/:id/telemetry', async (req, res) => {
 
       const orderedTasks = session.tasks.slice().sort((a, b) => a.orderIndex - b.orderIndex);
       const activeTask = orderedTasks.find((task) => !task.completedAt && !task.skipped);
+      const nextTaskCandidate = orderedTasks.find((task) => {
+        if (!activeTask) {
+          return !task.completedAt && !task.skipped;
+        }
+        return task.orderIndex > activeTask.orderIndex && !task.completedAt && !task.skipped;
+      });
 
       const nudges: { sessionTaskId: string; threshold: 'first' | 'second' | 'final'; firedAt: string }[] = [];
+      let currentTaskTelemetry: SessionActiveTaskTelemetry | null = null;
 
       if (activeTask) {
         const startedAt = activeTask.startedAt ?? session.actualStartAt ?? session.plannedStartAt;
         const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
+        const totalSeconds = Math.max(1, Math.round(activeTask.expectedMinutes * 60));
         const thresholds = [
           { key: 'nudgeFirstFiredAt' as const, ratio: 1 / 3, label: 'first' as const },
           { key: 'nudgeSecondFiredAt' as const, ratio: 2 / 3, label: 'second' as const },
@@ -187,7 +198,7 @@ router.get('/:id/telemetry', async (req, res) => {
         ];
 
         for (const threshold of thresholds) {
-          const targetSeconds = Math.max(1, Math.round(activeTask.expectedMinutes * 60 * threshold.ratio));
+          const targetSeconds = Math.max(1, Math.round(totalSeconds * threshold.ratio));
           const alreadyFired = activeTask[threshold.key];
 
           if (elapsedSeconds >= targetSeconds && !alreadyFired) {
@@ -196,7 +207,6 @@ router.get('/:id/telemetry', async (req, res) => {
               data: { [threshold.key]: now }
             });
 
-            // Mutate local copy so later thresholds in the loop respect the update.
             activeTask[threshold.key] = now;
 
             nudges.push({
@@ -206,13 +216,46 @@ router.get('/:id/telemetry', async (req, res) => {
             });
           }
         }
+
+        const firedDates = thresholds
+          .map((threshold) => activeTask[threshold.key])
+          .filter((value): value is Date => Boolean(value));
+        const lastNudgeFiredAt = firedDates.length
+          ? firedDates.reduce((latest, current) => (current > latest ? current : latest))
+          : null;
+        const nextNudge = thresholds.find((threshold) => !activeTask[threshold.key]);
+        const snapshotTask = snapshotByOrder.get(activeTask.orderIndex);
+
+        currentTaskTelemetry = {
+          sessionTaskId: activeTask.id,
+          title: activeTask.title,
+          expectedMinutes: activeTask.expectedMinutes,
+          hint: snapshotTask?.hint,
+          startedAt: startedAt.toISOString(),
+          elapsedSeconds,
+          remainingSeconds: Math.max(0, totalSeconds - elapsedSeconds),
+          nudgesFiredCount: firedDates.length,
+          totalScheduledNudges: thresholds.length,
+          nextNudgeThreshold: nextNudge ? nextNudge.label : null,
+          lastNudgeFiredAt: lastNudgeFiredAt ? lastNudgeFiredAt.toISOString() : null
+        };
       }
+
+      const nextTaskTelemetry = nextTaskCandidate
+        ? {
+            title: nextTaskCandidate.title,
+            hint: snapshotByOrder.get(nextTaskCandidate.orderIndex)?.hint
+          }
+        : null;
 
       return sessionTelemetrySchema.parse({
         urgencyLevel: urgency.urgencyLevel,
         timeRemainingMinutes: urgency.timeRemainingMinutes,
         paceDelta: urgency.paceDelta,
-        nudges
+        sessionEndsAt: session.plannedEndAt.toISOString(),
+        nudges,
+        currentTask: currentTaskTelemetry,
+        nextTask: nextTaskTelemetry
       });
     });
 
