@@ -451,15 +451,16 @@ const App = () => {
   }, [clearBoardIntroductionTimer, focusedSessionId, sessionIds, sessions]);
 
   useEffect(() => {
-    if (sessionIds.length === 0) {
+    if (sessionIdsKey.length === 0) {
       return undefined;
     }
 
     let cancelled = false;
+    const ids = sessionIdsKey.split('|').filter(Boolean);
 
     const fetchTelemetry = async () => {
       await Promise.all(
-        sessionIds.map(async (sessionId) => {
+        ids.map(async (sessionId) => {
           try {
             const response = await fetch(`/api/sessions/${sessionId}/telemetry`);
             if (!response.ok) {
@@ -526,7 +527,7 @@ const App = () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [enqueueVoiceRequest, ensureProcessedSet, sessionIds, sessionIdsKey]);
+  }, [enqueueVoiceRequest, ensureProcessedSet, sessionIdsKey]);
   const handleCompleteTask = useCallback(
     async (sessionId: string, index: number) => {
       const entry = sessionStateRef.current[sessionId];
