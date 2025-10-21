@@ -6,6 +6,7 @@ import {
 } from '@klar-parat/shared';
 import type { Express } from 'express';
 import { Router } from 'express';
+
 import { loadFeatureFlags } from '../config/flags.js';
 import { sendNotFound, sendServerError, sendValidationError } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
@@ -186,7 +187,7 @@ const getOpenAiClient = async (): Promise<OpenAIClient> => {
     try {
       const module = await import('openai');
       openAiConstructor = module.default as unknown as new (config: { apiKey: string }) => OpenAIClient;
-    } catch (error) {
+    } catch {
       throw new Error('OPENAI_SDK_UNAVAILABLE');
     }
   }
