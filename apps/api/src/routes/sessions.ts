@@ -82,6 +82,7 @@ router.post('/start', async (req, res) => {
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      const sessionStart = new Date();
       const session = await tx.session.create({
         data: {
           childId: child.id,
@@ -89,11 +90,10 @@ router.post('/start', async (req, res) => {
           plannedStartAt: resolvedPlannedStart,
           plannedEndAt: resolvedPlannedEnd,
           expectedTotalMinutes: snapshot.expectedTotalMinutes,
-          allowSkip
+          allowSkip,
+          actualStartAt: sessionStart
         }
       });
-
-      const firstTaskActivation = new Date();
 
       await Promise.all(
         snapshot.tasks.map((task) =>
@@ -103,7 +103,7 @@ router.post('/start', async (req, res) => {
               title: task.title,
               expectedMinutes: task.expectedMinutes,
               orderIndex: task.orderIndex,
-              startedAt: task.orderIndex === 0 ? firstTaskActivation : null
+              startedAt: task.orderIndex === 0 ? sessionStart : null
             }
           })
         )

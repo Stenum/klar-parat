@@ -54,6 +54,7 @@ describe.sequential('sessions routes', () => {
     expect(session.allowSkip).toBe(true);
     expect(session.tasks).toHaveLength(2);
     expect(session.tasks[0].title).toBe('Wake up');
+    expect(session.actualStartAt).toBeTruthy();
 
     const persisted = await request(app).get(`/api/sessions/${session.id}`);
     expect(persisted.status).toBe(200);
@@ -91,6 +92,7 @@ describe.sequential('sessions routes', () => {
     });
 
     const sessionId = startResponse.body.session.id as string;
+    expect(startResponse.body.session.actualStartAt).toBeTruthy();
 
     const completeFirst = await request(app)
       .post(`/api/sessions/${sessionId}/task/0/complete`)
@@ -145,7 +147,7 @@ describe.sequential('sessions routes', () => {
       .send({ skipped: true });
     expect(skipFirst.status).toBe(200);
     expect(skipFirst.body.session.tasks[0].skipped).toBe(true);
-    expect(skipFirst.body.session.actualStartAt).toBeNull();
+    expect(skipFirst.body.session.actualStartAt).toBeTruthy();
 
     const skipSecond = await request(app)
       .post(`/api/sessions/${sessionId}/task/1/complete`)
@@ -156,7 +158,9 @@ describe.sequential('sessions routes', () => {
     expect(finishResponse.status).toBe(200);
     expect(finishResponse.body.session.medal).toBe('gold');
     expect(finishResponse.body.session.actualStartAt).toBeTruthy();
-    expect(finishResponse.body.session.actualStartAt).toBe(finishResponse.body.session.actualEndAt);
+    expect(
+      new Date(finishResponse.body.session.actualEndAt!).getTime()
+    ).toBeGreaterThanOrEqual(new Date(finishResponse.body.session.actualStartAt!).getTime());
 
     vi.useRealTimers();
   });

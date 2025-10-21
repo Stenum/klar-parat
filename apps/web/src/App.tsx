@@ -16,6 +16,12 @@ import { useVoicePlayer } from './utils/voice';
 
 type VoiceRequest =
   | {
+      type: 'session_start';
+      sessionId: string;
+      sessionTaskId: string;
+      language: string;
+    }
+  | {
       type: 'completion';
       sessionId: string;
       sessionTaskId: string;
@@ -78,23 +84,6 @@ const App = () => {
     processedNudgeKeysRef.current = new Set();
     setVoiceError(null);
   }, [applySessionUpdate, setVoiceError]);
-
-  const handleSessionStarted = useCallback(
-    (session: Session, child: Child) => {
-      applySessionUpdate(session);
-      setActiveChild(child);
-      setShowKidMode(true);
-      setSessionError(null);
-      setSessionActionPending(false);
-      setTelemetry(null);
-      setNudgeEvents([]);
-      voiceQueueRef.current = [];
-      voiceProcessingRef.current = false;
-      processedNudgeKeysRef.current = new Set();
-      setVoiceError(null);
-    },
-    [applySessionUpdate, setVoiceError]
-  );
 
   const handleEnterKidMode = useCallback(() => {
     setShowKidMode(true);
@@ -196,6 +185,33 @@ const App = () => {
       }
     },
     [processVoiceQueue, voiceEnabled]
+  );
+
+  const handleSessionStarted = useCallback(
+    (session: Session, child: Child) => {
+      applySessionUpdate(session);
+      setActiveChild(child);
+      setShowKidMode(true);
+      setSessionError(null);
+      setSessionActionPending(false);
+      setTelemetry(null);
+      setNudgeEvents([]);
+      voiceQueueRef.current = [];
+      voiceProcessingRef.current = false;
+      processedNudgeKeysRef.current = new Set();
+      setVoiceError(null);
+
+      const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
+      if (firstTask) {
+        enqueueVoiceRequest({
+          type: 'session_start',
+          sessionId: session.id,
+          sessionTaskId: firstTask.id,
+          language: VOICE_LANGUAGE
+        });
+      }
+    },
+    [applySessionUpdate, enqueueVoiceRequest, setVoiceError]
   );
 
   const handleEnableVoice = useCallback(async () => {

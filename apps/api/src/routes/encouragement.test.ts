@@ -72,7 +72,8 @@ describe.sequential('encouragement route', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.text).toBeTypeOf('string');
-    expect(response.body.text.length).toBeLessThanOrEqual(120);
+    expect(response.body.text).toContain('Luna');
+    expect(response.body.text).toContain('Brush teeth');
 
     vi.useRealTimers();
   });
@@ -93,6 +94,27 @@ describe.sequential('encouragement route', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.text).toContain('Luna');
-    expect(response.body.text.length).toBeLessThanOrEqual(120);
+    expect(response.body.text).toContain('Wake up');
+  });
+
+  it('provides a session kick-off message including time context', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-01-01T07:00:00.000Z'));
+
+    const session = await createSessionFixture();
+
+    const response = await request(app)
+      .post(`/api/sessions/${session.id}/message`)
+      .send({
+        type: 'session_start',
+        sessionTaskId: session.tasks[0].id,
+        language: 'en-US'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.text).toContain('Luna');
+    expect(response.body.text).toContain('Morning Flow');
+    expect(response.body.text).toContain('Wake up');
+    vi.useRealTimers();
   });
 });

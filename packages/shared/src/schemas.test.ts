@@ -183,16 +183,35 @@ describe('sessionTelemetrySchema', () => {
 describe('sessionMessageRequestSchema', () => {
   it('requires event type, task id, and language', () => {
     const parsed = sessionMessageRequestSchema.parse({
-      type: 'nudge',
+      type: 'session_start',
       sessionTaskId: 'cktask12345678901234567890',
-      nudgeThreshold: 'second',
       language: 'en-US'
     });
 
-    expect(parsed.type).toBe('nudge');
+    expect(parsed.type).toBe('session_start');
 
     expect(() =>
       sessionMessageRequestSchema.parse({ type: 'completion', sessionTaskId: 'bad', language: '' })
+    ).toThrow();
+  });
+
+  it('accepts nudge thresholds only from the allowed set', () => {
+    const parsed = sessionMessageRequestSchema.parse({
+      type: 'nudge',
+      sessionTaskId: 'cktask12345678901234567890',
+      nudgeThreshold: 'final',
+      language: 'da-DK'
+    });
+
+    expect(parsed.nudgeThreshold).toBe('final');
+
+    expect(() =>
+      sessionMessageRequestSchema.parse({
+        type: 'nudge',
+        sessionTaskId: 'cktask12345678901234567890',
+        nudgeThreshold: 'bogus' as 'first',
+        language: 'en-US'
+      })
     ).toThrow();
   });
 });

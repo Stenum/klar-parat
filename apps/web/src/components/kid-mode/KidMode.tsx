@@ -153,7 +153,6 @@ export const KidMode: FC<KidModeProps> = ({
         <div className="flex flex-col items-end gap-2 text-right">
           <div className="text-sm font-semibold uppercase tracking-wide text-slate-400">Elapsed</div>
           <div className="text-3xl font-bold text-emerald-200">{formatSeconds(elapsedSeconds)}</div>
-          {!session.actualStartAt && <div className="text-xs text-slate-400">Timer starts after your first task</div>}
         </div>
       </div>
       <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-slate-950/70 p-4 text-sm text-emerald-100">

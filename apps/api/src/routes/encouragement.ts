@@ -6,14 +6,26 @@ import {
 } from '@klar-parat/shared';
 import type { Express } from 'express';
 import { Router } from 'express';
-import OpenAI from 'openai';
-
 import { loadFeatureFlags } from '../config/flags.js';
 import { sendNotFound, sendServerError, sendValidationError } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
-const MAX_MESSAGE_LENGTH = 120;
+
+type OpenAIClient = {
+  chat: {
+    completions: {
+      create(input: {
+        model: string;
+        temperature: number;
+        max_tokens: number;
+        messages: { role: string; content: string }[];
+      }): Promise<{
+        choices?: { message?: { content?: string } }[];
+      }>;
+    };
+  };
+};
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -22,14 +34,6 @@ const describeLanguage = (code: string) => {
     return 'Danish';
   }
   return 'English';
-};
-
-const truncateText = (text: string) => {
-  if (text.length <= MAX_MESSAGE_LENGTH) {
-    return text;
-  }
-
-  return `${text.slice(0, MAX_MESSAGE_LENGTH - 1).trimEnd()}…`;
 };
 
 const formatNudgeThreshold = (threshold: 'first' | 'second' | 'final' | null) => {
@@ -54,55 +58,74 @@ const toAgeYears = (birthdate: Date, now: Date) => {
 const buildFallbackMessage = ({
   type,
   childFirstName,
+  sessionName,
   taskTitle,
   nextTaskTitle,
+  sessionMinutesRemaining,
   language
 }: {
-  type: 'completion' | 'nudge';
+  type: 'session_start' | 'completion' | 'nudge';
   childFirstName: string;
+  sessionName: string;
   taskTitle: string;
   nextTaskTitle: string | null;
+  sessionMinutesRemaining: number;
   language: string;
 }) => {
   const isDanish = language.toLowerCase().startsWith('da');
+  const timePhrase = (() => {
+    if (sessionMinutesRemaining <= 0) {
+      return isDanish ? 'Tiden er knap' : 'Time is almost up';
+    }
+    return isDanish
+      ? `Vi har cirka ${sessionMinutesRemaining} min`
+      : `We have about ${sessionMinutesRemaining} minutes`;
+  })();
+
+  if (type === 'session_start') {
+    if (isDanish) {
+      return `${timePhrase}, ${childFirstName}! Første opgave er ${taskTitle} i ${sessionName}.`;
+    }
+    return `${timePhrase}, ${childFirstName}! First up for ${sessionName} is ${taskTitle}.`;
+  }
 
   if (type === 'completion') {
     if (isDanish) {
-      return truncateText(
-        nextTaskTitle
-          ? `Sejt, ${childFirstName}! Videre til ${nextTaskTitle}!`
-          : `Fantastisk arbejde, ${childFirstName}!`
-      );
+      return nextTaskTitle
+        ? `Sejt, ${childFirstName}! ${timePhrase.toLowerCase()} — videre til ${nextTaskTitle}!`
+        : `Fantastisk arbejde, ${childFirstName}! ${timePhrase.toLowerCase()} til resten.`;
     }
 
-    return truncateText(
-      nextTaskTitle
-        ? `Amazing job, ${childFirstName}! Next up: ${nextTaskTitle}!`
-        : `Awesome work finishing ${taskTitle}, ${childFirstName}!`
-    );
+    return nextTaskTitle
+      ? `Amazing job, ${childFirstName}! ${timePhrase.toLowerCase()} — next up is ${nextTaskTitle}.`
+      : `Awesome work finishing ${taskTitle}, ${childFirstName}! ${timePhrase.toLowerCase()} to spare.`;
   }
 
   if (isDanish) {
-    return truncateText(`Hey ${childFirstName}, hold fokus på ${taskTitle}!`);
+    return `${timePhrase}, ${childFirstName}! Hold fokus på ${taskTitle}.`;
   }
 
-  return truncateText(`You’ve got this, ${childFirstName}! Stay on ${taskTitle}!`);
+  return `${timePhrase}, ${childFirstName}! Stay on ${taskTitle}!`;
 };
 
 const buildFakeMessage = ({
   type,
   childFirstName,
+  sessionName,
   taskTitle,
   nextTaskTitle,
   sessionMinutesRemaining,
+  sessionMinutesElapsed,
   currentTaskSecondsRemaining,
   language
 }: {
-  type: 'completion' | 'nudge';
+  type: 'session_start' | 'completion' | 'nudge';
   childFirstName: string;
+  sessionName: string;
   taskTitle: string;
   nextTaskTitle: string | null;
   sessionMinutesRemaining: number;
+  sessionMinutesElapsed: number;
   currentTaskSecondsRemaining: number;
   language: string;
 }) => {
@@ -111,46 +134,69 @@ const buildFakeMessage = ({
   const secondsText = currentTaskSecondsRemaining > 30 ? 'stadig tid' : 'næsten færdig';
   const englishMinutes = sessionMinutesRemaining > 0 ? `${sessionMinutesRemaining}m` : 'right now';
   const englishSeconds = currentTaskSecondsRemaining > 30 ? 'plenty of time' : 'almost done';
+  const elapsedText = sessionMinutesElapsed > 0 ? `${sessionMinutesElapsed}m inde` : 'lige begyndt';
+  const elapsedEnglish = sessionMinutesElapsed > 0 ? `${sessionMinutesElapsed}m in` : 'just getting started';
+
+  if (type === 'session_start') {
+    if (isDanish) {
+      return `Godmorgen, ${childFirstName}! ${elapsedText}, ${minutesText} tilbage — vi starter ${sessionName} med ${taskTitle}.`;
+    }
+    return `Morning, ${childFirstName}! ${elapsedEnglish}, ${englishMinutes} left — ${sessionName} begins with ${taskTitle}.`;
+  }
 
   if (type === 'completion') {
     if (isDanish) {
-      return truncateText(
-        nextTaskTitle
-          ? `Super, ${childFirstName}! ${minutesText} tilbage — nu ${nextTaskTitle}!`
-          : `Flot klaret, ${childFirstName}! Du kører!`
-      );
+      return nextTaskTitle
+        ? `Super, ${childFirstName}! ${minutesText} tilbage — nu ${nextTaskTitle}!`
+        : `Flot klaret, ${childFirstName}! ${minutesText} til overs!`;
     }
 
-    return truncateText(
-      nextTaskTitle
-        ? `Great job, ${childFirstName}! ${englishMinutes} left — next is ${nextTaskTitle}!`
-        : `Way to go finishing ${taskTitle}, ${childFirstName}!`
-    );
+    return nextTaskTitle
+      ? `Great job, ${childFirstName}! ${englishMinutes} left — next is ${nextTaskTitle}!`
+      : `Way to go finishing ${taskTitle}, ${childFirstName}! ${englishMinutes} to spare!`;
   }
 
   if (isDanish) {
-    return truncateText(`Kom så, ${childFirstName}! ${secondsText} på ${taskTitle}!`);
+    return `Kom så, ${childFirstName}! ${secondsText} på ${taskTitle}!`;
   }
 
-  return truncateText(`Let’s go, ${childFirstName}! You’re ${englishSeconds} on ${taskTitle}!`);
+  return `Let’s go, ${childFirstName}! You’re ${englishSeconds} on ${taskTitle}!`;
 };
 
-const SYSTEM_PROMPT = `You are Klar Parat’s upbeat morning coach speaking to young kids. Keep every message under 120 characters, energetic, and shame-free.
-Always address the child by first name, celebrate wins, and gently mention time remaining.
-Nudging strategy: each task allows up to three check-ins — first gentle, second energising, final urgent but kind.
-Return strict JSON: {"text":"..."} with no extra keys or prose.`;
+const SYSTEM_PROMPT = `You are Klar Parat, a cheerful morning coach helping young kids get ready at home before they leave for the day.
+Speak in short, lively sentences (1–3) with zero shame and lots of encouragement.
+You receive structured JSON with details about the child, routine, timing, and nudges.
+Event types:
+- session_start — welcome the child, frame today’s routine, highlight the first task, and mention how much time there is.
+- nudge — mid-task encouragement referencing progress and the pace/urgency data provided.
+- completion — celebrate the finished task, preview the next task (or wrap the session) and comment on how the schedule looks.
+Always use the child’s first name and comment honestly on whether there is plenty of time or if everyone needs to hurry.
+Never invent details that are not in the context.
+Respond ONLY with valid JSON: {"text":"..."} ready to be spoken aloud.`;
 
-let openAiClient: OpenAI | null = null;
+let openAiClient: OpenAIClient | null = null;
+let openAiConstructor: (new (config: { apiKey: string }) => OpenAIClient) | null = null;
 
-const getOpenAiClient = () => {
-  if (!openAiClient) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not configured');
-    }
-    openAiClient = new OpenAI({ apiKey });
+const getOpenAiClient = async (): Promise<OpenAIClient> => {
+  if (openAiClient) {
+    return openAiClient;
   }
 
+  if (!openAiConstructor) {
+    try {
+      const module = await import('openai');
+      openAiConstructor = module.default as unknown as new (config: { apiKey: string }) => OpenAIClient;
+    } catch (error) {
+      throw new Error('OPENAI_SDK_UNAVAILABLE');
+    }
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  openAiClient = new openAiConstructor!({ apiKey });
   return openAiClient;
 };
 
@@ -161,15 +207,22 @@ const callOpenAi = async ({
   context: Record<string, unknown>;
   language: string;
 }): Promise<string | null> => {
-  const client = getOpenAiClient();
-  const userPrompt = `Language: ${describeLanguage(language)}.\nContext:\n${JSON.stringify(context, null, 2)}`;
+  const client = await getOpenAiClient();
+  const userPrompt = [
+    `Language: ${describeLanguage(language)}`,
+    'You are speaking aloud to the child right now.',
+    'Use the timing details to judge urgency honestly.',
+    'JSON context follows:',
+    JSON.stringify(context, null, 2),
+    'Respond with JSON {"text":"..."} only.'
+  ].join('\n');
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
         temperature: 0.7,
-        max_tokens: 120,
+        max_tokens: 220,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
@@ -184,7 +237,7 @@ const callOpenAi = async ({
       try {
         const parsed = JSON.parse(choice);
         const validated = llmResponseSchema.parse(parsed);
-        return truncateText(validated.text);
+        return validated.text;
       } catch (error) {
         console.error('Failed to parse LLM response', error);
         return null;
@@ -245,51 +298,144 @@ router.post('/api/sessions/:id/message', async (req, res) => {
       { key: 'nudgeFinalFiredAt' as const, label: 'final' as const }
     ];
 
-    const startedAt = task.startedAt ?? session.actualStartAt ?? session.plannedStartAt;
+    const sessionStartAt = session.actualStartAt ?? session.plannedStartAt;
+    const startedAt = task.startedAt ?? sessionStartAt;
     const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
     const totalSeconds = Math.max(1, Math.round(task.expectedMinutes * 60));
     const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds);
+    const currentProgressRatio = Math.min(1, Number((elapsedSeconds / totalSeconds).toFixed(2)));
+
+    const sessionElapsedSeconds = Math.max(0, Math.floor((now.getTime() - sessionStartAt.getTime()) / 1000));
+    const sessionRemainingSeconds = Math.max(0, Math.floor((session.plannedEndAt.getTime() - now.getTime()) / 1000));
+    const sessionMinutesElapsed = Math.floor(sessionElapsedSeconds / 60);
+    const sessionMinutesRemaining = urgency.timeRemainingMinutes;
+    const sessionWindowMinutes = Math.max(
+      1,
+      Math.round((session.plannedEndAt.getTime() - sessionStartAt.getTime()) / 60000)
+    );
+
+    const totalTasks = session.tasks.length;
+    const completedTasks = session.tasks.filter((item) => item.completedAt || item.skipped).length;
+    const remainingTasks = Math.max(0, totalTasks - completedTasks);
+    const expectedRemainingMinutes = session.tasks
+      .filter((item) => !item.completedAt && !item.skipped)
+      .reduce((total, item) => total + item.expectedMinutes, 0);
 
     const firedDates = thresholds
       .map((threshold) => task[threshold.key])
       .filter((value): value is Date => Boolean(value));
     const nextThreshold = thresholds.find((threshold) => !task[threshold.key]);
+    const requestedNudge = type === 'nudge' ? nudgeThreshold ?? nextThreshold?.label ?? null : null;
 
     const nextTaskCandidate = session.tasks
       .filter((item) => item.orderIndex > task.orderIndex && !item.completedAt && !item.skipped)
       .sort((a, b) => a.orderIndex - b.orderIndex)[0];
+    const previousTaskCandidate = session.tasks
+      .filter((item) => item.orderIndex < task.orderIndex && (item.completedAt || item.skipped))
+      .sort((a, b) => b.orderIndex - a.orderIndex)[0];
+
+    const eventSummary = (() => {
+      if (type === 'session_start') {
+        return 'Kick off the routine, set the tone, and introduce the first task with timing awareness.';
+      }
+      if (type === 'completion') {
+        return nextTaskCandidate
+          ? 'Celebrate the completed task and tee up the next one while checking the clock.'
+          : 'Celebrate finishing the last task and reflect on the session pace.';
+      }
+      return 'Encourage focus on the current task using the remaining time and nudge cadence.';
+    })();
+
+    const nudgeKeyMap = {
+      first: 'nudgeFirstFiredAt',
+      second: 'nudgeSecondFiredAt',
+      final: 'nudgeFinalFiredAt'
+    } as const;
 
     const context = {
-      eventType: type,
+      event: {
+        type,
+        summary: eventSummary,
+        nowIso: now.toISOString(),
+        requestedNudgeThreshold: requestedNudge,
+        upcomingNudgeDescription: formatNudgeThreshold(requestedNudge ?? nextThreshold?.label ?? null),
+        urgencyLevel: urgency.urgencyLevel,
+        paceDelta: urgency.paceDelta,
+        sessionMinutesRemaining,
+        sessionMinutesElapsed
+      },
+      environment: {
+        scenario: 'Family morning routine before leaving home',
+        medium: 'Spoken encouragement delivered through the kid-mode tablet',
+        languageCode: language
+      },
       child: {
         firstName: session.child.firstName,
         ageYears: toAgeYears(session.child.birthdate, now)
       },
-      session: {
-        urgencyLevel: urgency.urgencyLevel,
-        timeRemainingMinutes: urgency.timeRemainingMinutes,
-        timeRemainingSeconds: Math.max(0, Math.round((session.plannedEndAt.getTime() - now.getTime()) / 1000)),
-        endsAt: session.plannedEndAt.toISOString()
+      timing: {
+        currentTimeIso: now.toISOString(),
+        sessionStartIso: sessionStartAt.toISOString(),
+        sessionEndIso: session.plannedEndAt.toISOString(),
+        sessionElapsedSeconds,
+        sessionRemainingSeconds,
+        sessionTimeBudgetMinutes: sessionWindowMinutes
       },
-      task: {
-        title: task.title,
-        hint: snapshotByOrder.get(task.orderIndex)?.hint ?? null,
-        expectedMinutes: task.expectedMinutes,
-        elapsedSeconds,
-        remainingSeconds,
-        nudgesFiredCount: firedDates.length,
-        totalScheduledNudges: thresholds.length,
-        upcomingNudge: formatNudgeThreshold(type === 'nudge' ? nudgeThreshold ?? nextThreshold?.label ?? null : null),
-        celebrationCue:
-          type === 'completion'
-            ? `Cheer ${session.child.firstName} for finishing ${task.title}.`
-            : null,
-        nextTask: nextTaskCandidate
+      session: {
+        id: session.id,
+        name: snapshot.name,
+        allowSkip: session.allowSkip,
+        totalTasks,
+        completedTasks,
+        remainingTasks,
+        expectedTotalMinutes: session.expectedTotalMinutes,
+        expectedRemainingMinutes,
+        isComplete: remainingTasks === 0,
+        isFinalTask: remainingTasks <= 1 && !nextTaskCandidate
+      },
+      tasks: {
+        current: {
+          orderIndex: task.orderIndex,
+          title: task.title,
+          hint: snapshotByOrder.get(task.orderIndex)?.hint ?? null,
+          expectedMinutes: task.expectedMinutes,
+          startedAtIso: startedAt.toISOString(),
+          elapsedSeconds,
+          remainingSeconds,
+          progressRatio: currentProgressRatio,
+          nudgesFiredCount: firedDates.length,
+          totalScheduledNudges: thresholds.length,
+          nextNudgeThreshold: nextThreshold?.label ?? null,
+          nextNudgeDescription: formatNudgeThreshold(nextThreshold?.label ?? null)
+        },
+        next: nextTaskCandidate
           ? {
+              orderIndex: nextTaskCandidate.orderIndex,
               title: nextTaskCandidate.title,
-              hint: snapshotByOrder.get(nextTaskCandidate.orderIndex)?.hint ?? null
+              hint: snapshotByOrder.get(nextTaskCandidate.orderIndex)?.hint ?? null,
+              expectedMinutes: nextTaskCandidate.expectedMinutes
+            }
+          : null,
+        previous: previousTaskCandidate
+          ? {
+              orderIndex: previousTaskCandidate.orderIndex,
+              title: previousTaskCandidate.title,
+              skipped: previousTaskCandidate.skipped,
+              completedAtIso: previousTaskCandidate.completedAt
+                ? previousTaskCandidate.completedAt.toISOString()
+                : null
             }
           : null
+      },
+      nudgeStrategy: {
+        perTaskLimit: thresholds.length,
+        checkpoints: thresholds.map(({ label }, index) => ({
+          threshold: label,
+          order: index + 1,
+          firedAtIso: task[nudgeKeyMap[label]]
+            ? (task[nudgeKeyMap[label]] as Date).toISOString()
+            : null
+        }))
       }
     } satisfies Record<string, unknown>;
 
@@ -300,9 +446,11 @@ router.post('/api/sessions/:id/message', async (req, res) => {
       text = buildFakeMessage({
         type,
         childFirstName: session.child.firstName,
+        sessionName: snapshot.name,
         taskTitle: task.title,
-        nextTaskTitle: context.task.nextTask?.title ?? null,
-        sessionMinutesRemaining: urgency.timeRemainingMinutes,
+        nextTaskTitle: nextTaskCandidate?.title ?? null,
+        sessionMinutesRemaining,
+        sessionMinutesElapsed,
         currentTaskSecondsRemaining: remainingSeconds,
         language
       });
@@ -319,8 +467,10 @@ router.post('/api/sessions/:id/message', async (req, res) => {
       text = buildFallbackMessage({
         type,
         childFirstName: session.child.firstName,
+        sessionName: snapshot.name,
         taskTitle: task.title,
-        nextTaskTitle: context.task.nextTask?.title ?? null,
+        nextTaskTitle: nextTaskCandidate?.title ?? null,
+        sessionMinutesRemaining,
         language
       });
     }

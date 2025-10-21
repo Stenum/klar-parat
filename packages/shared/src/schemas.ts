@@ -170,7 +170,7 @@ export const sessionTelemetrySchema = z.object({
 });
 
 export const sessionMessageRequestSchema = z.object({
-  type: z.enum(['completion', 'nudge']),
+  type: z.enum(['session_start', 'completion', 'nudge']),
   sessionTaskId: z.string().cuid(),
   language: z
     .string()
@@ -181,11 +181,7 @@ export const sessionMessageRequestSchema = z.object({
 });
 
 export const llmResponseSchema = z.object({
-  text: z
-    .string()
-    .trim()
-    .min(1, 'text is required')
-    .max(240, 'text must be 240 characters or fewer')
+  text: z.string().trim().min(1, 'text is required')
 });
 
 export const sessionTaskCompleteSchema = z
