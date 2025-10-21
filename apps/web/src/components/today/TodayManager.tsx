@@ -1,21 +1,50 @@
 import type { Child, Session, Template } from '@shared/schemas';
 import type { FC } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import type {
+  SessionNudgeEvent,
+  SessionProgressState,
+  SessionTelemetry
+} from '../../types/session';
+import { MultiChildBoard } from './MultiChildBoard';
+
+type BoardSessionState = {
+  session: Session;
+  child: Child;
+  progress: SessionProgressState[];
+  telemetry: SessionTelemetry | null;
+  nudgeEvents: SessionNudgeEvent[];
+  pending: boolean;
+  error: string | null;
+};
 
 type TodayManagerProps = {
-  activeSession: Session | null;
-  activeChild: Child | null;
+  sessions: BoardSessionState[];
+  focusedSessionId: string | null;
+  onFocusSession: (sessionId: string | null) => void;
   onSessionStarted: (session: Session, child: Child) => void;
-  onEnterKidMode: () => void;
-  onEndSession: () => void;
+  onCompleteTask: (sessionId: string, index: number) => void;
+  onSkipTask: (sessionId: string, index: number) => void;
+  onEnableVoice: () => Promise<void>;
+  voiceEnabled: boolean;
+  voiceEnabling: boolean;
+  voiceError: string | null;
+  showDebugTelemetry: boolean;
 };
 
 export const TodayManager: FC<TodayManagerProps> = ({
-  activeSession,
-  activeChild,
+  sessions,
+  focusedSessionId,
+  onFocusSession,
   onSessionStarted,
-  onEnterKidMode,
-  onEndSession
+  onCompleteTask,
+  onSkipTask,
+  onEnableVoice,
+  voiceEnabled,
+  voiceEnabling,
+  voiceError,
+  showDebugTelemetry
 }) => {
   const [children, setChildren] = useState<Child[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -87,6 +116,7 @@ export const TodayManager: FC<TodayManagerProps> = ({
 
       const data = (await response.json()) as { session: Session };
       onSessionStarted(data.session, child);
+      setSelectedTemplateId('');
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'Unable to start session.');
@@ -95,51 +125,59 @@ export const TodayManager: FC<TodayManagerProps> = ({
     }
   }, [allowSkip, children, onSessionStarted, selectedChildId, selectedTemplateId]);
 
+  const activeNames = useMemo(
+    () => sessions.map((entry) => entry.child.firstName).join(', '),
+    [sessions]
+  );
+
   return (
-    <section className="rounded-2xl bg-slate-900/80 p-6 shadow-xl">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Today Session</h2>
-          <p className="text-sm text-slate-400">Pick the kid + routine, then hand over to Kid Mode.</p>
-        </div>
-        {loading && <span className="text-sm text-emerald-400">Loading…</span>}
-      </header>
-      {error && <p className="mb-4 rounded-lg bg-rose-500/20 p-3 text-rose-200">{error}</p>}
-      {activeSession && activeChild ? (
-        <div className="flex flex-col gap-4 rounded-xl bg-emerald-500/10 p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h3 className="text-xl font-semibold text-emerald-200">Session in progress</h3>
-              <p className="text-slate-200">
-                {activeChild.firstName} is working on <span className="font-semibold">{activeSession.templateSnapshot.name}</span>.
-              </p>
-            </div>
-            <div className="flex gap-3">
+    <div className="space-y-6">
+      <section className="rounded-2xl bg-slate-900/80 p-6 shadow-xl">
+        <header className="mb-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Today Session</h2>
+            <p className="text-sm text-slate-400">
+              Pick the kid + routine, enable voice once, and the board will guide everyone together.
+            </p>
+          </div>
+          {loading && <span className="text-sm text-emerald-400">Loading…</span>}
+        </header>
+
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-950/60 p-5 text-sm text-emerald-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="font-semibold uppercase tracking-wide text-emerald-200">Voice feedback</p>
+            {voiceEnabled ? (
+              <span className="flex items-center gap-2 text-xs text-emerald-300">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" aria-hidden /> Ready to cheer
+              </span>
+            ) : (
               <button
                 type="button"
-                onClick={onEnterKidMode}
-                className="rounded-lg bg-emerald-500 px-4 py-2 text-base font-semibold text-slate-900 shadow hover:bg-emerald-400"
+                onClick={() => void onEnableVoice()}
+                disabled={voiceEnabling}
+                className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/60"
               >
-                Open Kid Mode
+                {voiceEnabling ? 'Enabling…' : 'Enable Voice 🔊'}
               </button>
-              <button
-                type="button"
-                onClick={onEndSession}
-                className="rounded-lg border border-rose-300 px-4 py-2 text-base font-semibold text-rose-200 hover:bg-rose-400/10"
-              >
-                End Session
-              </button>
-            </div>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-emerald-200">
-            <span>{activeSession.tasks.length} tasks</span>
-            <span>
-              Starts {new Date(activeSession.plannedStartAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-            {activeSession.allowSkip && <span>Skipping allowed</span>}
-          </div>
+          <p className="mt-2 text-xs text-emerald-200/80">Enable once on the parent view so every column can speak.</p>
+          {voiceError ? (
+            <p className="mt-2 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-100">{voiceError}</p>
+          ) : null}
         </div>
-      ) : (
+
+        {sessions.length > 0 ? (
+          <div className="mb-6 rounded-xl bg-emerald-500/10 p-5 text-sm text-emerald-100">
+            <p className="font-semibold text-emerald-200">Board running</p>
+            <p>
+              {activeNames ? `${activeNames} are active.` : 'Sessions in progress.'} Tap a column focus button to spotlight a kid.
+            </p>
+          </div>
+        ) : null}
+
+        {error && <p className="mb-4 rounded-lg bg-rose-500/20 p-3 text-rose-200">{error}</p>}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="flex flex-col gap-4 rounded-xl bg-slate-950/40 p-5">
             <h3 className="text-xl font-semibold">Who is playing today?</h3>
@@ -191,16 +229,26 @@ export const TodayManager: FC<TodayManagerProps> = ({
               {starting ? 'Starting…' : 'Start Session'}
             </button>
             {(!children.length || !templates.length) && (
-              <p className="text-sm text-slate-400">Add at least one child and template first to enable Kid Mode.</p>
+              <p className="text-sm text-slate-400">Add at least one child and template first to enable the board.</p>
             )}
           </div>
           <div className="space-y-3 rounded-xl border border-dashed border-slate-700 bg-slate-950/20 p-5 text-sm text-slate-300">
             <p className="text-base font-semibold text-slate-100">What happens next?</p>
-            <p>Kid Mode will show one task at a time with a giant Complete button.</p>
-            <p>Progress sticks even if you refresh—Kid Mode now tracks time and medals automatically.</p>
+            <p>The board shows every kid at once with independent timers, urgency, and voice.</p>
+            <p>Progress sticks even if you refresh—the board keeps medals and timing live.</p>
+            <p>Tap a child chip above the board to highlight their column during the morning rush.</p>
           </div>
         </div>
-      )}
-    </section>
+      </section>
+
+      <MultiChildBoard
+        sessions={sessions}
+        focusedSessionId={focusedSessionId}
+        onFocusSession={onFocusSession}
+        onCompleteTask={onCompleteTask}
+        onSkipTask={onSkipTask}
+        showDebugTelemetry={showDebugTelemetry}
+      />
+    </div>
   );
 };

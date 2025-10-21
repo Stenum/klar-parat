@@ -134,6 +134,11 @@ export const sessionSchema = z.object({
   tasks: z.array(sessionTaskSchema)
 });
 
+export const sessionWithChildSchema = z.object({
+  session: sessionSchema,
+  child: childSchema
+});
+
 export const sessionNudgeEventSchema = z.object({
   sessionTaskId: z.string().cuid(),
   threshold: z.enum(['first', 'second', 'final']),

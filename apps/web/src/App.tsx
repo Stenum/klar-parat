@@ -1,8 +1,7 @@
 import type { Child, Session } from '@shared/schemas';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChildrenManager } from './components/children/ChildrenManager';
-import { KidMode } from './components/kid-mode/KidMode';
 import { getInitialNavKey, type NavKey, SidebarNav } from './components/navigation/SidebarNav';
 import { TemplatesManager } from './components/templates/TemplatesManager';
 import { TodayManager } from './components/today/TodayManager';
@@ -33,30 +32,83 @@ type VoiceRequest =
       sessionTaskId: string;
       nudgeThreshold: 'first' | 'second' | 'final';
       language: string;
+    }
+  | {
+      type: 'custom';
+      language: string;
+      text: string;
     };
+
+type SessionUIState = {
+  session: Session;
+  child: Child;
+  progress: SessionProgressState[];
+  pending: boolean;
+  error: string | null;
+  telemetry: SessionTelemetry | null;
+  nudgeEvents: SessionNudgeEvent[];
+};
 
 const VOICE_LANGUAGE = 'en-US';
 const VOICE_ID = 'kiddo';
 
+const formatList = (values: string[]): string => {
+  if (values.length === 0) {
+    return '';
+  }
+  if (values.length === 1) {
+    return values[0];
+  }
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`;
+  }
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
+};
+
+const describeTask = (task: Session['tasks'][number] | undefined): string => {
+  if (!task) {
+    return 'your first task';
+  }
+  const emoji = task.emoji ? `${task.emoji} ` : '';
+  return `${emoji}${task.title}`;
+};
+
+const buildBoardIntroduction = (entries: Array<{ session: Session; child: Child }>): string => {
+  if (entries.length === 0) {
+    return '';
+  }
+
+  const names = formatList(entries.map((entry) => entry.child.firstName));
+  const routines = formatList(
+    Array.from(new Set(entries.map((entry) => entry.session.templateSnapshot.name)))
+  );
+  const taskSentences = entries
+    .map((entry) => {
+      const firstTask = entry.session.tasks.find((task) => !task.completedAt && !task.skipped);
+      return `${entry.child.firstName}, start with ${describeTask(firstTask ?? entry.session.tasks[0])}.`;
+    })
+    .join(' ');
+
+  return `Hej ${names}! Today we're tackling ${routines}. ${taskSentences} You've got this!`;
+};
+
 const App = () => {
   const [activeNav, setActiveNav] = useState<NavKey>(getInitialNavKey());
-  const [activeSession, setActiveSession] = useState<Session | null>(null);
-  const [activeChild, setActiveChild] = useState<Child | null>(null);
-  const [showKidMode, setShowKidMode] = useState(false);
-  const [sessionProgress, setSessionProgress] = useState<SessionProgressState[]>([]);
-  const [sessionActionPending, setSessionActionPending] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [telemetry, setTelemetry] = useState<SessionTelemetry | null>(null);
-  const [nudgeEvents, setNudgeEvents] = useState<SessionNudgeEvent[]>([]);
+  const [sessions, setSessions] = useState<Record<string, SessionUIState>>({});
+  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
   const [debugMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
       return false;
     }
     return new URLSearchParams(window.location.search).get('debug') === '1';
   });
+  const sessionStateRef = useRef<Record<string, SessionUIState>>({});
   const voiceQueueRef = useRef<VoiceRequest[]>([]);
   const voiceProcessingRef = useRef(false);
-  const processedNudgeKeysRef = useRef<Set<string>>(new Set());
+  const processedNudgeKeysRef = useRef<Map<string, Set<string>>>(new Map());
+  const boardIntroDeliveredRef = useRef(false);
+  const boardIntroEntriesRef = useRef<Array<{ session: Session; child: Child }>>([]);
+  const boardIntroTimeoutRef = useRef<number | null>(null);
   const {
     enabled: voiceEnabled,
     enabling: voiceEnabling,
@@ -66,35 +118,55 @@ const App = () => {
     setError: setVoiceError
   } = useVoicePlayer();
 
-  const applySessionUpdate = useCallback((session: Session | null) => {
-    setActiveSession(session);
-    setSessionProgress(deriveSessionProgress(session));
+  const sessionList = useMemo(() => Object.values(sessions), [sessions]);
+  const sessionIds = useMemo(() => Object.keys(sessions), [sessions]);
+  const sessionIdsKey = useMemo(() => sessionIds.join('|'), [sessionIds]);
+
+  useEffect(() => {
+    sessionStateRef.current = sessions;
+  }, [sessions]);
+
+  const ensureProcessedSet = useCallback((sessionId: string) => {
+    let set = processedNudgeKeysRef.current.get(sessionId);
+    if (!set) {
+      set = new Set();
+      processedNudgeKeysRef.current.set(sessionId, set);
+    }
+    return set;
   }, []);
 
-  const resetSessionState = useCallback(() => {
-    applySessionUpdate(null);
-    setActiveChild(null);
-    setShowKidMode(false);
-    setSessionError(null);
-    setSessionActionPending(false);
-    setTelemetry(null);
-    setNudgeEvents([]);
-    voiceQueueRef.current = [];
-    voiceProcessingRef.current = false;
-    processedNudgeKeysRef.current = new Set();
-    setVoiceError(null);
-  }, [applySessionUpdate, setVoiceError]);
-
-  const handleEnterKidMode = useCallback(() => {
-    setShowKidMode(true);
-  }, []);
-
-  const handleReturnToParent = useCallback(() => {
-    setShowKidMode(false);
+  const clearBoardIntroductionTimer = useCallback(() => {
+    if (boardIntroTimeoutRef.current !== null) {
+      window.clearTimeout(boardIntroTimeoutRef.current);
+      boardIntroTimeoutRef.current = null;
+    }
   }, []);
 
   const requestSpeechAudio = useCallback(
     async (request: VoiceRequest) => {
+      if (request.type === 'custom') {
+        const ttsResponse = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: request.text,
+            language: request.language,
+            voice: VOICE_ID
+          })
+        });
+
+        const ttsPayload = (await ttsResponse.json()) as {
+          audioUrl?: string;
+          error?: { message?: string };
+        };
+
+        if (!ttsResponse.ok || !ttsPayload.audioUrl) {
+          throw new Error(ttsPayload.error?.message ?? 'Unable to create voice audio.');
+        }
+
+        return ttsPayload.audioUrl;
+      }
+
       const llmResponse = await fetch(`/api/sessions/${request.sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -187,19 +259,105 @@ const App = () => {
     [processVoiceQueue, voiceEnabled]
   );
 
+  const triggerBoardIntroduction = useCallback(
+    (entries: Array<{ session: Session; child: Child }>) => {
+      if (entries.length === 0) {
+        return;
+      }
+      const text = buildBoardIntroduction(entries);
+      enqueueVoiceRequest({ type: 'custom', language: VOICE_LANGUAGE, text });
+      boardIntroDeliveredRef.current = true;
+      boardIntroEntriesRef.current = [];
+      clearBoardIntroductionTimer();
+    },
+    [clearBoardIntroductionTimer, enqueueVoiceRequest]
+  );
+
+  const addSessionEntry = useCallback((session: Session, child: Child) => {
+    setSessions((prev) => ({
+      ...prev,
+      [session.id]: {
+        session,
+        child,
+        progress: deriveSessionProgress(session),
+        pending: false,
+        error: null,
+        telemetry: null,
+        nudgeEvents: []
+      }
+    }));
+    processedNudgeKeysRef.current.set(session.id, new Set());
+  }, []);
+
+  const applySessionUpdate = useCallback((session: Session) => {
+    setSessions((prev) => {
+      const existing = prev[session.id];
+      if (!existing) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [session.id]: {
+          ...existing,
+          session,
+          progress: deriveSessionProgress(session),
+          pending: false,
+          error: null
+        }
+      };
+    });
+  }, []);
+
+  const finishSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/finish`, {
+          method: 'POST'
+        });
+        if (!response.ok) {
+          throw new Error('Failed to finalise session');
+        }
+        const data = (await response.json()) as { session: Session };
+        applySessionUpdate(data.session);
+      } catch (error) {
+        console.error(error);
+        setSessions((prev) => {
+          const existing = prev[sessionId];
+          if (!existing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [sessionId]: {
+              ...existing,
+              pending: false,
+              error: 'Unable to finalise the session. Please try again.'
+            }
+          };
+        });
+      }
+    },
+    [applySessionUpdate]
+  );
   const handleSessionStarted = useCallback(
     (session: Session, child: Child) => {
-      applySessionUpdate(session);
-      setActiveChild(child);
-      setShowKidMode(true);
-      setSessionError(null);
-      setSessionActionPending(false);
-      setTelemetry(null);
-      setNudgeEvents([]);
-      voiceQueueRef.current = [];
-      voiceProcessingRef.current = false;
-      processedNudgeKeysRef.current = new Set();
+      addSessionEntry(session, child);
+      setFocusedSessionId(session.id);
       setVoiceError(null);
+      processedNudgeKeysRef.current.set(session.id, new Set());
+
+      if (!boardIntroDeliveredRef.current) {
+        boardIntroEntriesRef.current = [...boardIntroEntriesRef.current, { session, child }];
+        if (boardIntroEntriesRef.current.length >= 2) {
+          triggerBoardIntroduction(boardIntroEntriesRef.current);
+        } else if (boardIntroTimeoutRef.current === null) {
+          boardIntroTimeoutRef.current = window.setTimeout(() => {
+            if (!boardIntroDeliveredRef.current && boardIntroEntriesRef.current.length > 0) {
+              triggerBoardIntroduction(boardIntroEntriesRef.current);
+            }
+          }, 1500);
+        }
+      }
 
       const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
       if (firstTask) {
@@ -211,7 +369,7 @@ const App = () => {
         });
       }
     },
-    [applySessionUpdate, enqueueVoiceRequest, setVoiceError]
+    [addSessionEntry, enqueueVoiceRequest, setVoiceError, triggerBoardIntroduction]
   );
 
   const handleEnableVoice = useCallback(async () => {
@@ -228,96 +386,167 @@ const App = () => {
     }
   }, [processVoiceQueue, voiceEnabled]);
 
+  const fetchActiveSessions = useCallback(async () => {
+    try {
+      const response = await fetch('/api/sessions/active');
+      if (!response.ok) {
+        throw new Error('Failed to load active sessions');
+      }
+      const data = (await response.json()) as {
+        sessions: Array<{ session: Session; child: Child }>;
+      };
+
+      const nextState: Record<string, SessionUIState> = {};
+      const processed = new Map<string, Set<string>>();
+      data.sessions.forEach(({ session, child }) => {
+        nextState[session.id] = {
+          session,
+          child,
+          progress: deriveSessionProgress(session),
+          pending: false,
+          error: null,
+          telemetry: null,
+          nudgeEvents: []
+        };
+        processed.set(session.id, new Set());
+      });
+
+      processedNudgeKeysRef.current = processed;
+      boardIntroDeliveredRef.current = data.sessions.length > 0;
+      boardIntroEntriesRef.current = [];
+      clearBoardIntroductionTimer();
+      setSessions(nextState);
+
+      setFocusedSessionId((current) => {
+        if (current && nextState[current]) {
+          return current;
+        }
+        const firstId = data.sessions[0]?.session.id ?? null;
+        return firstId;
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  }, [clearBoardIntroductionTimer]);
+
   useEffect(() => {
-    if (!activeSession || !showKidMode) {
+    void fetchActiveSessions();
+    return () => {
+      clearBoardIntroductionTimer();
+    };
+  }, [clearBoardIntroductionTimer, fetchActiveSessions]);
+
+  useEffect(() => {
+    if (sessionIds.length === 0) {
+      setFocusedSessionId(null);
+      boardIntroDeliveredRef.current = false;
+      boardIntroEntriesRef.current = [];
+      clearBoardIntroductionTimer();
+      voiceQueueRef.current = [];
+      voiceProcessingRef.current = false;
+      processedNudgeKeysRef.current = new Map();
+    } else if (focusedSessionId && !sessions[focusedSessionId]) {
+      setFocusedSessionId(sessionIds[0] ?? null);
+    }
+  }, [clearBoardIntroductionTimer, focusedSessionId, sessionIds, sessions]);
+
+  useEffect(() => {
+    if (sessionIds.length === 0) {
       return undefined;
     }
 
     let cancelled = false;
-    let interval: number | null = null;
 
     const fetchTelemetry = async () => {
-      try {
-        const response = await fetch(`/api/sessions/${activeSession.id}/telemetry`);
-        if (!response.ok) {
-          throw new Error('Failed to load telemetry');
-        }
-        const data = (await response.json()) as { telemetry: SessionTelemetry };
-        if (cancelled) {
-          return;
-        }
-        setTelemetry(data.telemetry);
-        if (data.telemetry.nudges.length > 0) {
-          setNudgeEvents((current) => {
-            const existing = new Set(current.map((event) => `${event.sessionTaskId}:${event.threshold}`));
-            const additions = data.telemetry.nudges.filter((event) => {
-              const key = `${event.sessionTaskId}:${event.threshold}`;
-              return !existing.has(key) && !processedNudgeKeysRef.current.has(key);
-            });
-
-            if (additions.length > 0) {
-              additions.forEach((event) => {
-                const key = `${event.sessionTaskId}:${event.threshold}`;
-                processedNudgeKeysRef.current.add(key);
-                enqueueVoiceRequest({
-                  type: 'nudge',
-                  sessionId: activeSession.id,
-                  sessionTaskId: event.sessionTaskId,
-                  nudgeThreshold: event.threshold,
-                  language: VOICE_LANGUAGE
-                });
-              });
-              return [...current, ...additions];
+      await Promise.all(
+        sessionIds.map(async (sessionId) => {
+          try {
+            const response = await fetch(`/api/sessions/${sessionId}/telemetry`);
+            if (!response.ok) {
+              throw new Error('Failed to load telemetry');
+            }
+            const data = (await response.json()) as { telemetry: SessionTelemetry };
+            if (cancelled) {
+              return;
             }
 
-            return current;
-          });
-        }
-      } catch (error) {
-        console.error(error);
-      }
+            setSessions((prev) => {
+              const existing = prev[sessionId];
+              if (!existing) {
+                return prev;
+              }
+
+              const existingEvents = existing.nudgeEvents;
+              const processed = ensureProcessedSet(sessionId);
+              const additions = data.telemetry.nudges.filter((event) => {
+                const key = `${event.sessionTaskId}:${event.threshold}`;
+                return (
+                  !processed.has(key) &&
+                  !existingEvents.some(
+                    (current) =>
+                      current.sessionTaskId === event.sessionTaskId && current.threshold === event.threshold
+                  )
+                );
+              });
+
+              if (additions.length > 0) {
+                additions.forEach((event) => {
+                  const key = `${event.sessionTaskId}:${event.threshold}`;
+                  processed.add(key);
+                  enqueueVoiceRequest({
+                    type: 'nudge',
+                    sessionId,
+                    sessionTaskId: event.sessionTaskId,
+                    nudgeThreshold: event.threshold,
+                    language: VOICE_LANGUAGE
+                  });
+                });
+              }
+
+              return {
+                ...prev,
+                [sessionId]: {
+                  ...existing,
+                  telemetry: data.telemetry,
+                  nudgeEvents: additions.length > 0 ? [...existingEvents, ...additions] : existingEvents
+                }
+              };
+            });
+          } catch (error) {
+            console.error(error);
+          }
+        })
+      );
     };
 
     void fetchTelemetry();
-    interval = window.setInterval(fetchTelemetry, 5000);
+    const interval = window.setInterval(fetchTelemetry, 5000);
 
     return () => {
       cancelled = true;
-      if (interval !== null) {
-        window.clearInterval(interval);
-      }
+      window.clearInterval(interval);
     };
-  }, [activeSession, enqueueVoiceRequest, showKidMode]);
-
-  const finishSession = useCallback(
-    async (sessionId: string) => {
-      try {
-        const response = await fetch(`/api/sessions/${sessionId}/finish`, {
-          method: 'POST'
-        });
-        if (!response.ok) {
-          throw new Error('Failed to finalise session');
-        }
-        const data = (await response.json()) as { session: Session };
-        applySessionUpdate(data.session);
-        setSessionError(null);
-      } catch (error) {
-        console.error(error);
-        setSessionError('Unable to finalise the session. Please try again.');
-      }
-    },
-    [applySessionUpdate]
-  );
-
+  }, [enqueueVoiceRequest, ensureProcessedSet, sessionIds, sessionIdsKey]);
   const handleCompleteTask = useCallback(
-    async (index: number) => {
-      if (!activeSession) {
+    async (sessionId: string, index: number) => {
+      const entry = sessionStateRef.current[sessionId];
+      if (!entry) {
         return;
       }
 
-      setSessionActionPending(true);
+      setSessions((prev) => {
+        const existing = prev[sessionId];
+        if (!existing) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [sessionId]: { ...existing, pending: true, error: null }
+        };
+      });
+
       try {
-        const response = await fetch(`/api/sessions/${activeSession.id}/task/${index}/complete`, {
+        const response = await fetch(`/api/sessions/${sessionId}/task/${index}/complete`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -331,7 +560,6 @@ const App = () => {
 
         const data = (await response.json()) as { session: Session };
         applySessionUpdate(data.session);
-        setSessionError(null);
 
         const updatedTask = data.session.tasks[index];
         if (updatedTask && !updatedTask.skipped && updatedTask.completedAt) {
@@ -349,23 +577,45 @@ const App = () => {
         }
       } catch (error) {
         console.error(error);
-        setSessionError('Unable to update this task. Please try again.');
-      } finally {
-        setSessionActionPending(false);
+        setSessions((prev) => {
+          const existing = prev[sessionId];
+          if (!existing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [sessionId]: {
+              ...existing,
+              pending: false,
+              error: 'Unable to update this task. Please try again.'
+            }
+          };
+        });
       }
     },
-    [activeSession, applySessionUpdate, enqueueVoiceRequest, finishSession]
+    [applySessionUpdate, enqueueVoiceRequest, finishSession]
   );
 
   const handleSkipTask = useCallback(
-    async (index: number) => {
-      if (!activeSession) {
+    async (sessionId: string, index: number) => {
+      const entry = sessionStateRef.current[sessionId];
+      if (!entry) {
         return;
       }
 
-      setSessionActionPending(true);
+      setSessions((prev) => {
+        const existing = prev[sessionId];
+        if (!existing) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [sessionId]: { ...existing, pending: true, error: null }
+        };
+      });
+
       try {
-        const response = await fetch(`/api/sessions/${activeSession.id}/task/${index}/complete`, {
+        const response = await fetch(`/api/sessions/${sessionId}/task/${index}/complete`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -379,7 +629,6 @@ const App = () => {
 
         const data = (await response.json()) as { session: Session };
         applySessionUpdate(data.session);
-        setSessionError(null);
 
         const allHandled = data.session.tasks.every((task) => task.completedAt || task.skipped);
         if (allHandled && !data.session.medal) {
@@ -387,12 +636,23 @@ const App = () => {
         }
       } catch (error) {
         console.error(error);
-        setSessionError('Unable to skip this task. Please try again.');
-      } finally {
-        setSessionActionPending(false);
+        setSessions((prev) => {
+          const existing = prev[sessionId];
+          if (!existing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [sessionId]: {
+              ...existing,
+              pending: false,
+              error: 'Unable to skip this task. Please try again.'
+            }
+          };
+        });
       }
     },
-    [activeSession, applySessionUpdate, finishSession]
+    [applySessionUpdate, finishSession]
   );
 
   return (
@@ -405,39 +665,24 @@ const App = () => {
         <SidebarNav activeKey={activeNav} onSelect={setActiveNav} />
       </aside>
       <main className="flex-1 overflow-y-auto bg-slate-900/40 p-8">
-        <div className="mx-auto flex max-w-5xl flex-col gap-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-8">
           {activeNav === 'children' ? <ChildrenManager /> : null}
           {activeNav === 'templates' ? <TemplatesManager /> : null}
-          {activeNav === 'today' && (
-            activeSession && showKidMode && activeChild ? (
-              <KidMode
-                session={activeSession}
-                child={activeChild}
-                progress={sessionProgress}
-                actionPending={sessionActionPending}
-                error={sessionError}
-                telemetry={telemetry}
-                nudgeEvents={nudgeEvents}
-                voiceEnabled={voiceEnabled}
-                voicePending={voiceEnabling}
-                voiceError={voiceError}
-                onEnableVoice={handleEnableVoice}
-                onCompleteTask={handleCompleteTask}
-                onSkipTask={handleSkipTask}
-                onReturnToParent={handleReturnToParent}
-                onEndSession={resetSessionState}
-                showDebugTelemetry={debugMode}
-              />
-            ) : (
-              <TodayManager
-                activeSession={activeSession}
-                activeChild={activeChild}
-                onSessionStarted={handleSessionStarted}
-                onEnterKidMode={handleEnterKidMode}
-                onEndSession={resetSessionState}
-              />
-            )
-          )}
+          {activeNav === 'today' ? (
+            <TodayManager
+              sessions={sessionList}
+              focusedSessionId={focusedSessionId}
+              onFocusSession={setFocusedSessionId}
+              onSessionStarted={handleSessionStarted}
+              onCompleteTask={handleCompleteTask}
+              onSkipTask={handleSkipTask}
+              onEnableVoice={handleEnableVoice}
+              voiceEnabled={voiceEnabled}
+              voiceEnabling={voiceEnabling}
+              voiceError={voiceError}
+              showDebugTelemetry={debugMode}
+            />
+          ) : null}
           {activeNav === 'history' && (
             <p className="text-lg text-slate-400">History tracking is coming later.</p>
           )}

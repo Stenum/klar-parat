@@ -1,3 +1,4 @@
+import type { Child } from '@klar-parat/shared';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -227,5 +228,41 @@ describe.sequential('sessions routes', () => {
     expect(finalNudgeTelemetry.body.telemetry.currentTask?.nudgesFiredCount).toBe(3);
 
     vi.useRealTimers();
+  });
+
+  it('lists active sessions with children and allows concurrent task completions', async () => {
+    const { child: childOne, template } = await createFixtures();
+    const childTwo = await prisma.child.create({
+      data: {
+        firstName: 'Charles',
+        birthdate: new Date('2014-12-01'),
+        active: true
+      }
+    });
+
+    const [firstStart, secondStart] = await Promise.all([
+      request(app).post('/api/sessions/start').send({ childId: childOne.id, templateId: template.id }),
+      request(app).post('/api/sessions/start').send({ childId: childTwo.id, templateId: template.id })
+    ]);
+
+    expect(firstStart.status).toBe(201);
+    expect(secondStart.status).toBe(201);
+
+    const activeResponse = await request(app).get('/api/sessions/active');
+    expect(activeResponse.status).toBe(200);
+    expect(activeResponse.body.sessions).toHaveLength(2);
+    const activeNames = activeResponse.body.sessions.map((entry: { child: Child }) => entry.child.firstName);
+    expect(activeNames).toContain('Ada');
+    expect(activeNames).toContain('Charles');
+
+    const [firstComplete, secondComplete] = await Promise.all([
+      request(app).post(`/api/sessions/${firstStart.body.session.id}/task/0/complete`).send({}),
+      request(app).post(`/api/sessions/${secondStart.body.session.id}/task/0/complete`).send({})
+    ]);
+
+    expect(firstComplete.status).toBe(200);
+    expect(secondComplete.status).toBe(200);
+    expect(firstComplete.body.session.tasks[0].completedAt).toBeTruthy();
+    expect(secondComplete.body.session.tasks[0].completedAt).toBeTruthy();
   });
 });
