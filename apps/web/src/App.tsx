@@ -52,6 +52,8 @@ type SessionUIState = {
 const VOICE_LANGUAGE = 'en-US';
 const VOICE_ID = 'kiddo';
 
+type TodayViewMode = 'planner' | 'board';
+
 const formatList = (values: string[]): string => {
   if (values.length === 0) {
     return '';
@@ -96,6 +98,7 @@ const App = () => {
   const [activeNav, setActiveNav] = useState<NavKey>(getInitialNavKey());
   const [sessions, setSessions] = useState<Record<string, SessionUIState>>({});
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
+  const [todayMode, setTodayMode] = useState<TodayViewMode>('planner');
   const [debugMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -115,6 +118,8 @@ const App = () => {
     error: voiceError,
     setError: setVoiceError
   } = useVoicePlayer();
+  const [endingSessions, setEndingSessions] = useState(false);
+  const [endSessionsError, setEndSessionsError] = useState<string | null>(null);
 
   const sessionList = useMemo(() => Object.values(sessions), [sessions]);
   const sessionIds = useMemo(() => Object.keys(sessions), [sessions]);
@@ -322,6 +327,7 @@ const App = () => {
       setFocusedSessionId(session.id);
       setVoiceError(null);
       processedNudgeKeysRef.current.set(session.id, new Set());
+      setTodayMode('board');
 
       if (boardIntroDeliveredRef.current) {
         const firstTask = session.tasks.find((task) => !task.completedAt && !task.skipped);
@@ -352,7 +358,8 @@ const App = () => {
     }
   }, [processVoiceQueue, voiceEnabled]);
 
-  const fetchActiveSessions = useCallback(async () => {
+  const fetchActiveSessions = useCallback(async (): Promise<number> => {
+    let count = 0;
     try {
       const response = await fetch('/api/sessions/active');
       if (!response.ok) {
@@ -380,6 +387,8 @@ const App = () => {
       processedNudgeKeysRef.current = processed;
       boardIntroDeliveredRef.current = data.sessions.length > 0;
       setSessions(nextState);
+      setTodayMode(data.sessions.length > 0 ? 'board' : 'planner');
+      count = data.sessions.length;
 
       setFocusedSessionId((current) => {
         if (current && nextState[current]) {
@@ -391,6 +400,7 @@ const App = () => {
     } catch (error) {
       console.error(error);
     }
+    return count;
   }, []);
 
   useEffect(() => {
@@ -404,6 +414,7 @@ const App = () => {
       voiceQueueRef.current = [];
       voiceProcessingRef.current = false;
       processedNudgeKeysRef.current = new Map();
+      setTodayMode('planner');
     } else if (focusedSessionId && !sessions[focusedSessionId]) {
       setFocusedSessionId(sessionIds[0] ?? null);
     }
@@ -411,6 +422,10 @@ const App = () => {
 
   const handleSessionsBatchStarted = useCallback(
     (entries: Array<{ session: Session; child: Child }>) => {
+      if (entries.length > 0) {
+        setTodayMode('board');
+      }
+
       if (boardIntroDeliveredRef.current || entries.length === 0) {
         return;
       }
@@ -420,6 +435,60 @@ const App = () => {
     },
     [enqueueVoiceRequest]
   );
+
+  const handleEndAllSessions = useCallback(async () => {
+    if (endingSessions) {
+      return;
+    }
+
+    const entries = Object.values(sessionStateRef.current);
+    if (entries.length === 0) {
+      setTodayMode('planner');
+      return;
+    }
+
+    setEndingSessions(true);
+    setEndSessionsError(null);
+
+    try {
+      for (const entry of entries) {
+        const { session } = entry;
+        for (let index = 0; index < session.tasks.length; index += 1) {
+          const task = session.tasks[index];
+          if (task.completedAt || task.skipped) {
+            continue;
+          }
+
+          const response = await fetch(`/api/sessions/${session.id}/task/${index}/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skipped: true })
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({} as { error?: { message?: string } }));
+            throw new Error(payload.error?.message ?? 'Unable to skip remaining tasks.');
+          }
+        }
+
+        const finishResponse = await fetch(`/api/sessions/${session.id}/finish`, { method: 'POST' });
+        if (!finishResponse.ok) {
+          const payload = await finishResponse.json().catch(() => ({} as { error?: { message?: string } }));
+          throw new Error(payload.error?.message ?? 'Unable to end the session.');
+        }
+      }
+
+      const remaining = await fetchActiveSessions();
+      setTodayMode(remaining > 0 ? 'board' : 'planner');
+    } catch (error) {
+      console.error(error);
+      setEndSessionsError(
+        error instanceof Error ? error.message : 'Unable to end sessions right now. Please try again.'
+      );
+    } finally {
+      setEndingSessions(false);
+    }
+  }, [endingSessions, fetchActiveSessions]);
 
   useEffect(() => {
     if (sessionIdsKey.length === 0) {
@@ -627,6 +696,16 @@ const App = () => {
     [applySessionUpdate, finishSession]
   );
 
+  const isTodayBoardFullScreen = activeNav === 'today' && todayMode === 'board';
+  const mainClasses = [
+    'flex-1 bg-slate-900/40',
+    isTodayBoardFullScreen ? 'overflow-hidden p-0' : 'overflow-y-auto p-8'
+  ].join(' ');
+  const containerClasses = [
+    'flex flex-col gap-8',
+    isTodayBoardFullScreen ? 'h-full w-full' : 'mx-auto max-w-6xl'
+  ].join(' ');
+
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-50">
       <aside className="flex w-64 flex-col gap-8 border-r border-slate-800 bg-slate-900 p-6">
@@ -636,8 +715,8 @@ const App = () => {
         </div>
         <SidebarNav activeKey={activeNav} onSelect={setActiveNav} />
       </aside>
-      <main className="flex-1 overflow-y-auto bg-slate-900/40 p-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-8">
+      <main className={mainClasses}>
+        <div className={containerClasses}>
           {activeNav === 'children' ? <ChildrenManager /> : null}
           {activeNav === 'templates' ? <TemplatesManager /> : null}
           {activeNav === 'today' ? (
@@ -654,6 +733,11 @@ const App = () => {
               voiceEnabling={voiceEnabling}
               voiceError={voiceError}
               showDebugTelemetry={debugMode}
+              mode={todayMode}
+              onLaunchBoard={() => setTodayMode('board')}
+              onEndAllSessions={handleEndAllSessions}
+              endingSessions={endingSessions}
+              endSessionsError={endSessionsError}
             />
           ) : null}
           {activeNav === 'history' && (

@@ -217,10 +217,7 @@ describe('App (multi-child board)', () => {
           actualEndAt: new Date().toISOString()
         };
         sessionsById.set(sessionId, updated);
-        const record = activeSessions.find((entry) => entry.session.id === sessionId);
-        if (record) {
-          record.session = updated;
-        }
+        activeSessions = activeSessions.filter((entry) => entry.session.id !== sessionId);
         return jsonResponse({ session: updated });
       }
 
@@ -243,14 +240,14 @@ describe('App (multi-child board)', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows the voice enable control on the Today view', async () => {
+  it('shows the voice status indicator on the Today planner', async () => {
     const user = userEvent.setup();
     render(<App />);
 
     const todayNav = await screen.findByRole('button', { name: 'Today' });
     await user.click(todayNav);
 
-    expect(await screen.findByRole('button', { name: /enable voice/i })).toBeInTheDocument();
+    expect(await screen.findByText(/will enable when you start/i)).toBeInTheDocument();
   });
 
   it('navigates between sections without leaving the board setup', async () => {
@@ -288,11 +285,9 @@ describe('App (multi-child board)', () => {
     const startButton = screen.getByRole('button', { name: 'Start 2 sessions' });
     await user.click(startButton);
 
+    expect(await screen.findByRole('button', { name: 'End all sessions' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Ada' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Ben' })).toBeInTheDocument();
-
-    const enableVoice = await screen.findByRole('button', { name: /enable voice/i });
-    await user.click(enableVoice);
 
     await waitFor(() => {
       const introCall = fetchMock.mock.calls.find(([input, init]) => {
@@ -316,5 +311,52 @@ describe('App (multi-child board)', () => {
       return (init?.method ?? 'GET').toUpperCase() === 'POST' && Boolean(init?.body);
     });
     expect(startMessageCalls).toHaveLength(0);
+  });
+
+  it('lets the parent end all sessions and return to planning', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const todayNav = await screen.findByRole('button', { name: 'Today' });
+    await user.click(todayNav);
+
+    await waitFor(() => expect(screen.getByLabelText('Child')).toBeInTheDocument());
+
+    await user.selectOptions(screen.getByLabelText('Child'), 'child-1');
+    await user.selectOptions(screen.getByLabelText('Routine template'), 'template-1');
+    await user.click(screen.getByRole('button', { name: 'Add to plan' }));
+
+    await user.click(screen.getByRole('button', { name: 'Start 1 session' }));
+
+    const endButton = await screen.findByRole('button', { name: 'End all sessions' });
+    await user.click(endButton);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add to plan' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'End all sessions' })).not.toBeInTheDocument();
+
+    const skipCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      if (typeof input !== 'string' || !/task\/\d+\/complete$/.test(input)) {
+        return false;
+      }
+      if (!init?.body) {
+        return false;
+      }
+      try {
+        const body = JSON.parse(init.body as string) as { skipped?: boolean };
+        return body.skipped === true;
+      } catch {
+        return false;
+      }
+    });
+
+    const finishCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      if (typeof input !== 'string' || !/\/api\/sessions\/[^/]+\/finish$/.test(input)) {
+        return false;
+      }
+      return (init?.method ?? 'GET').toUpperCase() === 'POST';
+    });
+
+    expect(skipCalls.length).toBeGreaterThan(0);
+    expect(finishCalls.length).toBeGreaterThan(0);
   });
 });

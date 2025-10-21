@@ -26,6 +26,8 @@ type PlannedEntry = {
   allowSkip: boolean;
 };
 
+type TodayViewMode = 'planner' | 'board';
+
 type TodayManagerProps = {
   sessions: BoardSessionState[];
   focusedSessionId: string | null;
@@ -39,6 +41,11 @@ type TodayManagerProps = {
   voiceEnabling: boolean;
   voiceError: string | null;
   showDebugTelemetry: boolean;
+  mode: TodayViewMode;
+  onLaunchBoard: () => void;
+  onEndAllSessions: () => Promise<void>;
+  endingSessions: boolean;
+  endSessionsError: string | null;
 };
 
 export const TodayManager: FC<TodayManagerProps> = ({
@@ -53,7 +60,12 @@ export const TodayManager: FC<TodayManagerProps> = ({
   voiceEnabled,
   voiceEnabling,
   voiceError,
-  showDebugTelemetry
+  showDebugTelemetry,
+  mode,
+  onLaunchBoard,
+  onEndAllSessions,
+  endingSessions,
+  endSessionsError
 }) => {
   const [children, setChildren] = useState<Child[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -176,6 +188,8 @@ export const TodayManager: FC<TodayManagerProps> = ({
 
       if (startedEntries.length > 0) {
         onSessionsBatchStarted(startedEntries);
+        onLaunchBoard();
+        await onEnableVoice();
       }
       setPlannedEntries([]);
     } catch (err) {
@@ -184,45 +198,86 @@ export const TodayManager: FC<TodayManagerProps> = ({
     } finally {
       setStarting(false);
     }
-  }, [onSessionStarted, onSessionsBatchStarted, plannedEntries]);
+  }, [onEnableVoice, onLaunchBoard, onSessionStarted, onSessionsBatchStarted, plannedEntries]);
 
-  const activeNames = useMemo(
-    () => sessions.map((entry) => entry.child.firstName).join(', '),
-    [sessions]
-  );
+  const activeNames = useMemo(() => sessions.map((entry) => entry.child.firstName).join(', '), [sessions]);
+
+  if (mode === 'board') {
+    return (
+      <div className="flex h-full flex-col gap-6 bg-slate-950 p-6">
+        <header className="flex flex-col gap-4 rounded-3xl bg-slate-900/60 p-6 shadow-lg md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-wide text-emerald-300">Kid screen</p>
+            <h2 className="mt-1 text-3xl font-semibold text-slate-50">
+              {activeNames ? `${activeNames} are up!` : 'Morning routine time!'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Tap a kid to spotlight their column. Voice cheer kicks off automatically.
+            </p>
+          </div>
+          <div className="flex flex-col items-stretch gap-3 text-sm text-slate-200 md:items-end">
+            <button
+              type="button"
+              onClick={() => void onEndAllSessions()}
+              disabled={endingSessions}
+              className="rounded-xl bg-rose-500 px-4 py-3 text-base font-semibold text-slate-950 shadow transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:bg-rose-500/60"
+            >
+              {endingSessions ? 'Ending…' : 'End all sessions'}
+            </button>
+            {!voiceEnabled && voiceEnabling ? (
+              <span className="text-xs text-emerald-300">Connecting voice…</span>
+            ) : null}
+            {voiceEnabled ? (
+              <span className="text-xs text-emerald-300">Voice ready to cheer</span>
+            ) : null}
+          </div>
+        </header>
+
+        {voiceError ? (
+          <p className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-100">{voiceError}</p>
+        ) : null}
+        {endSessionsError ? (
+          <p className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-100">{endSessionsError}</p>
+        ) : null}
+
+        <div className="flex-1 overflow-y-auto">
+          <MultiChildBoard
+            sessions={sessions}
+            focusedSessionId={focusedSessionId}
+            onFocusSession={onFocusSession}
+            onCompleteTask={onCompleteTask}
+            onSkipTask={onSkipTask}
+            showDebugTelemetry={showDebugTelemetry}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <section className="rounded-2xl bg-slate-900/80 p-6 shadow-xl">
         <header className="mb-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold">Today Session</h2>
-            <p className="text-sm text-slate-400">
-              Pick the kid + routine, enable voice once, and the board will guide everyone together.
-            </p>
-          </div>
+            <div>
+              <h2 className="text-2xl font-semibold">Today Session</h2>
+              <p className="text-sm text-slate-400">
+                Pick the kid + routine and the board will guide everyone together as soon as you tap start.
+              </p>
+            </div>
           {loading && <span className="text-sm text-emerald-400">Loading…</span>}
         </header>
 
         <div className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-950/60 p-5 text-sm text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="font-semibold uppercase tracking-wide text-emerald-200">Voice feedback</p>
-            {voiceEnabled ? (
-              <span className="flex items-center gap-2 text-xs text-emerald-300">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" aria-hidden /> Ready to cheer
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void onEnableVoice()}
-                disabled={voiceEnabling}
-                className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/60"
-              >
-                {voiceEnabling ? 'Enabling…' : 'Enable Voice 🔊'}
-              </button>
-            )}
+            <span className="flex items-center gap-2 text-xs text-emerald-300">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" aria-hidden />
+              {voiceEnabled ? 'Ready to cheer' : 'Will enable when you start'}
+            </span>
           </div>
-          <p className="mt-2 text-xs text-emerald-200/80">Enable once on the parent view so every column can speak.</p>
+          <p className="mt-2 text-xs text-emerald-200/80">
+            Voice starts automatically as soon as you launch the kid screen.
+          </p>
           {voiceError ? (
             <p className="mt-2 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-100">{voiceError}</p>
           ) : null}
@@ -346,15 +401,6 @@ export const TodayManager: FC<TodayManagerProps> = ({
           </div>
         </div>
       </section>
-
-      <MultiChildBoard
-        sessions={sessions}
-        focusedSessionId={focusedSessionId}
-        onFocusSession={onFocusSession}
-        onCompleteTask={onCompleteTask}
-        onSkipTask={onSkipTask}
-        showDebugTelemetry={showDebugTelemetry}
-      />
     </div>
   );
 };
