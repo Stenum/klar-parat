@@ -362,15 +362,17 @@ Validation errors return HTTP 400, missing resources 404, and unexpected failure
 
 ### 8.2 Kid runs Today Session
 
-1. Open app → “Start Today” (or auto when first task completed).
-2. Kid Mode board shows one column per active child with current task card (emoji + hint) and a big “Mark Done” button.
+1. Parent opens **Today** on the parent view, stages every participating child by pairing them with a routine template, then taps **Start** once the plan looks right. Voice playback is enabled as part of this launch tap so TTS begins immediately.
+2. The board takes over the screen with the kid-facing layout and plays a single kickoff message that greets all staged kids together and reminds each of their first task before nudges take over.
+3. Kid Mode board shows one column per active child with current task card (emoji + hint) and a big “Mark Done” button.
    * Optional “Skip” button shows only if the parent allowed skips when starting the session.
-3. On tap: message is generated → TTS plays → that child’s column advances while others continue uninterrupted.
-4. Final task: “You finished!” + medal animation + total time vs. expected.
+4. On tap: message is generated → TTS plays → that child’s column advances while others continue uninterrupted.
+5. Final task: “You finished!” + medal animation + total time vs. expected.
+6. Parent can tap **End all sessions** at any time to skip outstanding tasks, finish every running session, and drop back to the pre-launch planner.
 
 **Edge cases:**
 
-* If the browser blocks autoplay TTS, show a “Tap to hear” button.
+* If the browser blocks autoplay TTS, surface an inline error in the parent view so they can retry by tapping **Start** again.
 * If a task is accidentally marked done, parent can undo from a parent-only drawer (pin-protected).
 * Timer starts on the first completed task (or manual start) so idle time before beginning doesn’t count toward the medal. Finishing with only skipped tasks yields a zero-duration Gold.
 

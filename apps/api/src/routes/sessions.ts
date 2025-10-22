@@ -6,13 +6,14 @@ import {
   sessionStartSchema,
   sessionTaskCompleteSchema,
   sessionTelemetrySchema,
+  sessionWithChildSchema,
   templateSnapshotSchema
 } from '@klar-parat/shared';
 import type { Express } from 'express';
 import { Router } from 'express';
 
 import { sendNotFound, sendServerError, sendValidationError } from '../lib/http.js';
-import { mapSession } from '../lib/mappers.js';
+import { mapChild, mapSession } from '../lib/mappers.js';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
@@ -121,6 +122,28 @@ router.post('/start', async (req, res) => {
 
     const session = sessionSchema.parse(mapSession(created));
     res.status(201).json({ session });
+  } catch (error) {
+    console.error(error);
+    sendServerError(res);
+  }
+});
+
+router.get('/active', async (_req, res) => {
+  try {
+    const active = await prisma.session.findMany({
+      where: { actualEndAt: null },
+      include: { tasks: true, child: true },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const sessions = active.map((record) =>
+      sessionWithChildSchema.parse({
+        session: mapSession(record),
+        child: mapChild(record.child)
+      })
+    );
+
+    res.json({ sessions });
   } catch (error) {
     console.error(error);
     sendServerError(res);

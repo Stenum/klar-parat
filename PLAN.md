@@ -226,12 +226,19 @@
 
 # Iteration 7 — Multi-Child Same-Screen Board
 
-**Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent. Voice feedback is enabled on the parent view before the sessiono is started.
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-27)
+  - PR: feat(I7): auto-launch kid board with voice
+  - What changed: Auto-launched the multi-child kid board with staged planning, shared voice kickoff, and an end-all-sessions reset.
+  - How verified: `npm run lint`, `npm run typecheck`, `npm run test`.
+
+**Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent. Voice feedback arms itself when the parent taps Start, the kid board takes over the full screen, and the parent can end all running sessions to return to planning.
 
 **Web**
 
 * Replace Kid Mode with a board layout that shows one column per active child (current task, progress bar, big Complete/Skip buttons).
 * The Today (Parent) view launches and resumes sessions into the shared board without navigation changes; allow quick focus highlighting per column.
+* Provide a pre-launch planner so the parent can stage multiple child/template pairs before starting the board.
+* Add an “End all sessions” control on the kid board that skips outstanding tasks, finishes every session, and drops back to the planner.
 * Surface live medal and urgency status per child column so progress is visible at a glance.
 
 **Server**
