@@ -226,7 +226,10 @@
 
 # Iteration 7 — Multi-Child Same-Screen Board
 
-**Status:** 🟨 In Progress (gpt-5-codex – 2025-10-27)
+**Status:** 🟩 Complete (gpt-5-codex – 2025-10-27)
+  - PR: feat(I7): auto-launch kid board with voice
+  - What changed: Auto-launched the multi-child kid board with staged planning, shared voice kickoff, and an end-all-sessions reset.
+  - How verified: `npm run lint`, `npm run typecheck`, `npm run test`.
 
 **Goal:** Let siblings run their routines side-by-side on one device while keeping timers, urgency, and voice independent. Voice feedback arms itself when the parent taps Start, the kid board takes over the full screen, and the parent can end all running sessions to return to planning.
 
